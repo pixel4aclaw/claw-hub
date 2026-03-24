@@ -29,6 +29,10 @@ const ALERT_THRESHOLD = 3; // consecutive errors before alerting admin
 let consecutiveErrors = 0;
 let alertSent = false;
 
+// Track the last known rate limit reset time so shutdown handler can park items
+let globalRateLimitedUntil = 0;
+function getRateLimitedUntil() { return globalRateLimitedUntil; }
+
 const SYSTEM_PROMPT = `You are Claw, the AI at the heart of Claw Hub — a collaborative app where ~40 developers experiment with building AI-powered projects. You live inside the codebase on a Pixel 4a running Termux.
 
 You have full access to the server: Bash, file read/write, code editing, web search. When a user asks you to build something, you build it. When they ask a question, answer directly.
@@ -38,6 +42,34 @@ You're not a wrapper around a chat API — you're an agent that can do real work
 Be warm but sharp. Talk like a senior dev pair-programming with a peer — direct, no fluff, technically precise. Use markdown for code blocks and formatting. Keep responses concise unless the topic demands depth.
 
 If a user sends multiple messages at once, address them all in a single response — don't repeat yourself across messages.`;
+
+/**
+ * Parse a rate-limit reset time from an error message like:
+ *   "You've hit your limit · resets 11am (America/Phoenix)"
+ * Returns a Unix timestamp (ms) for the reset time, or a 2-hour default.
+ */
+function parseRateLimitReset(msg) {
+  // Try to extract "Xam/Xpm (Timezone)" pattern
+  const m = msg.match(/resets\s+(\d+(?::\d+)?(?:am|pm))\s+\(([^)]+)\)/i);
+  if (m) {
+    try {
+      const timeStr = m[1];
+      const tz = m[2];
+      const now = new Date();
+      // Build a date string for today in that timezone
+      const todayStr = now.toLocaleDateString('en-US', { timeZone: tz, year: 'numeric', month: 'long', day: 'numeric' });
+      const resetDate = new Date(`${todayStr} ${timeStr} ${tz}`);
+      if (!isNaN(resetDate.getTime()) && resetDate.getTime() > Date.now()) {
+        return resetDate.getTime();
+      }
+      // If parsed time is in the past, add a day
+      if (!isNaN(resetDate.getTime())) {
+        return resetDate.getTime() + 86400000;
+      }
+    } catch (_) {}
+  }
+  return Date.now() + 2 * 60 * 60 * 1000; // 2-hour default
+}
 
 async function callAgent(username, userId, userMessage, forceNewSession) {
   const user = get('SELECT session_id FROM users WHERE id = ?', [userId]);
@@ -81,10 +113,18 @@ async function callAgent(username, userId, userMessage, forceNewSession) {
     }
     if (message.type === 'rate_limit_event') {
       const info = message.rate_limit_info || {};
-      const resetSec = info.resetAt || info.reset_at || info.reset || 0;
-      rateLimitedUntil = resetSec ? resetSec * 1000 : Date.now() + 60000;
+      console.log(`[queue] rate_limit_event info: ${JSON.stringify(info)}`);
+      const resetSec = info.resetsAt || info.resetAt || info.reset_at || info.reset || 0;
+      // Parse from message string if available, else default to 2 hours (not 60s)
+      const msgStr = info.message || info.error || '';
+      rateLimitedUntil = resetSec
+        ? resetSec * 1000
+        : msgStr
+          ? parseRateLimitReset(msgStr)
+          : Date.now() + 2 * 60 * 60 * 1000;
       const waitMin = Math.ceil((rateLimitedUntil - Date.now()) / 60000);
       console.log(`[queue] rate limited, resets in ~${waitMin}min`);
+      globalRateLimitedUntil = Math.max(globalRateLimitedUntil, rateLimitedUntil);
     }
   }
 
@@ -132,14 +172,15 @@ async function processNext(io) {
     FROM queue q
     JOIN users u ON q.user_id = u.id
     WHERE q.status = 'pending'
+      AND (q.blocked_until IS NULL OR q.blocked_until <= strftime('%s','now'))
     ORDER BY q.id ASC
     LIMIT 1
   `);
   if (!item) return;
 
-  // Lock it
+  // Lock it (also clear blocked_until since the window has passed)
   run(
-    `UPDATE queue SET status = 'processing', started_at = strftime('%s','now') WHERE id = ? AND status = 'pending'`,
+    `UPDATE queue SET status = 'processing', started_at = strftime('%s','now'), blocked_until = NULL WHERE id = ? AND status = 'pending'`,
     [item.id]
   );
   const locked = get('SELECT id FROM queue WHERE id = ? AND status = ?', [item.id, 'processing']);
@@ -207,11 +248,17 @@ async function processNext(io) {
       lastErr = err;
       console.error(`[queue] attempt ${attempt}/${MAX_RETRIES} failed for item ${item.id}: ${err.message}`);
 
-      // Rate limit: put item back as pending and stop retrying — no point hammering the API
+      // Detect SDK-level rate limit errors (e.g. "You've hit your limit · resets 11am (America/Phoenix)")
+      if (!err.rateLimitedUntil && /hit your limit|rate.?limit/i.test(err.message || '')) {
+        err.rateLimitedUntil = parseRateLimitReset(err.message || '');
+      }
+
+      // Rate limit: park item until reset time — don't let the worker pick it up again too soon
       if (err.rateLimitedUntil) {
-        run("UPDATE queue SET status = 'pending', started_at = NULL WHERE id = ?", [item.id]);
+        const blockedUntilSec = Math.ceil(err.rateLimitedUntil / 1000);
+        run("UPDATE queue SET status = 'pending', started_at = NULL, blocked_until = ? WHERE id = ?", [blockedUntilSec, item.id]);
         const waitMin = Math.ceil((err.rateLimitedUntil - Date.now()) / 60000);
-        console.log(`[queue] item ${item.id} requeued, rate limit clears in ~${waitMin}min`);
+        console.log(`[queue] item ${item.id} parked until rate limit clears (~${waitMin}min)`);
         // Notify user we're waiting, not erroring
         io.to(`user:${item.username}`).emit('chat_response', {
           content: `I'm being rate-limited right now — your message is saved and I'll process it automatically once the limit clears (~${waitMin} min). No need to resend.`,
@@ -312,4 +359,4 @@ function startWorker(io) {
   return timer;
 }
 
-module.exports = { startWorker };
+module.exports = { startWorker, getRateLimitedUntil };

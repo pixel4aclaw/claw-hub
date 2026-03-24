@@ -10,7 +10,7 @@ const v8 = require('v8');
 const { execSync } = require('child_process');
 const { getDb, all, get, insert, run, persist } = require('./db');
 const { requireAuth, setSession, getSession, clearSession, SITE_PASSWORD } = require('./auth');
-const { startWorker } = require('./worker');
+const { startWorker, getRateLimitedUntil } = require('./worker');
 
 const app = express();
 const server = http.createServer(app);
@@ -616,6 +616,16 @@ function stop() {
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
 function shutdown(signal) {
   console.log(`\n[${signal}] Shutting down gracefully...`);
+  // If rate-limited, park any processing items so they survive the restart
+  const rateLimitedUntil = getRateLimitedUntil();
+  if (rateLimitedUntil > Date.now()) {
+    const blockedUntilSec = Math.ceil(rateLimitedUntil / 1000);
+    const stale = all(`SELECT id FROM queue WHERE status = 'processing'`, []);
+    for (const s of stale) {
+      run("UPDATE queue SET status = 'pending', started_at = NULL, blocked_until = ? WHERE id = ?", [blockedUntilSec, s.id]);
+      console.log(`[${signal}] parked item ${s.id} with blocked_until=${new Date(rateLimitedUntil).toISOString()}`);
+    }
+  }
   persist();
   server.close(() => {
     console.log('Server closed.');

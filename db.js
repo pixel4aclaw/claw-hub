@@ -61,7 +61,8 @@ function initSchema() {
       status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','processing','done','error')),
       created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
       started_at INTEGER,
-      completed_at INTEGER
+      completed_at INTEGER,
+      blocked_until INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS mail (
@@ -125,6 +126,8 @@ function migrate() {
     )`);
     // Add session_id column to users table for agent SDK session resumption
     try { db.run(`ALTER TABLE users ADD COLUMN session_id TEXT`); } catch (_) {}
+    // Add blocked_until to queue so rate-limited items stay parked until reset
+    try { db.run(`ALTER TABLE queue ADD COLUMN blocked_until INTEGER`); } catch (_) {}
     persist();
   } catch (e) {
     console.error('[db] migration error:', e.message);
