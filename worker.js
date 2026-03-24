@@ -35,7 +35,7 @@ async function callAgent(username, userId, userMessage) {
   const existingSessionId = user?.session_id;
 
   const options = {
-    model: 'sonnet',
+    model: 'opus',
     cwd: __dirname,
     allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write', 'WebSearch', 'WebFetch'],
     permissionMode: 'bypassPermissions',
