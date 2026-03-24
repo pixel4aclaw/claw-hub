@@ -69,94 +69,67 @@ async function callAgent(username, userId, userMessage) {
 }
 
 async function processNext(io) {
-  // Grab ALL pending items for the oldest pending user (batch same-user messages)
-  const first = get(`
-    SELECT q.user_id, u.username
+  // Grab the oldest pending item
+  const item = get(`
+    SELECT q.id, q.user_id, q.message_id, u.username
     FROM queue q
     JOIN users u ON q.user_id = u.id
     WHERE q.status = 'pending'
     ORDER BY q.id ASC
     LIMIT 1
   `);
-  if (!first) return;
+  if (!item) return;
 
-  const items = all(`
-    SELECT q.id, q.message_id
-    FROM queue q
-    WHERE q.user_id = ? AND q.status = 'pending'
-    ORDER BY q.id ASC
-  `, [first.user_id]);
-  if (!items.length) return;
+  // Lock it
+  run(
+    `UPDATE queue SET status = 'processing', started_at = strftime('%s','now') WHERE id = ? AND status = 'pending'`,
+    [item.id]
+  );
+  const locked = get('SELECT id FROM queue WHERE id = ? AND status = ?', [item.id, 'processing']);
+  if (!locked) return;
 
-  // Lock all items
-  const ids = items.map(i => i.id);
-  for (const id of ids) {
-    run(
-      `UPDATE queue SET status = 'processing', started_at = strftime('%s','now') WHERE id = ? AND status = 'pending'`,
-      [id]
-    );
-  }
-
-  console.log(`[queue] processing ${items.length} item(s) [${ids.join(',')}] for ${first.username}`);
+  console.log(`[queue] processing item ${item.id} for ${item.username}`);
 
   try {
-    // Fetch all user messages for this batch
-    const messages = items.map(item => {
-      const msg = get('SELECT content FROM messages WHERE id = ?', [item.message_id]);
-      if (!msg) throw new Error(`message ${item.message_id} not found`);
-      return msg.content;
-    });
+    const msg = get('SELECT content FROM messages WHERE id = ?', [item.message_id]);
+    if (!msg) throw new Error(`message ${item.message_id} not found`);
 
-    // Emit queue position = 0 (thinking)
-    io.to(`user:${first.username}`).emit('queue_update', { position: 0 });
+    io.to(`user:${item.username}`).emit('queue_update', { position: 0 });
 
-    // Combine messages into a single prompt
-    const prompt = messages.length === 1
-      ? messages[0]
-      : messages.map((m, i) => `[Message ${i + 1}] ${m}`).join('\n\n');
-
-    const reply = await callAgent(first.username, first.user_id, prompt);
+    const reply = await callAgent(item.username, item.user_id, msg.content);
     if (!reply) throw new Error('Empty response from agent');
 
-    // Save single assistant message
     insert(
       'INSERT INTO messages (user_id, role, content) VALUES (?,?,?)',
-      [first.user_id, 'assistant', reply]
+      [item.user_id, 'assistant', reply]
     );
 
-    // Mark all items done
-    for (const id of ids) {
-      run(
-        `UPDATE queue SET status = 'done', completed_at = strftime('%s','now') WHERE id = ?`,
-        [id]
-      );
-    }
+    run(
+      `UPDATE queue SET status = 'done', completed_at = strftime('%s','now') WHERE id = ?`,
+      [item.id]
+    );
 
-    // Push to user
-    io.to(`user:${first.username}`).emit('chat_response', {
+    io.to(`user:${item.username}`).emit('chat_response', {
       content: reply,
       created_at: Date.now(),
     });
 
-    // Update queue status
     const remaining = (get(
       `SELECT COUNT(*) as c FROM queue WHERE user_id = ? AND status = 'pending'`,
-      [first.user_id]
+      [item.user_id]
     ) || {}).c || 0;
-    io.to(`user:${first.username}`).emit('queue_update', {
+    io.to(`user:${item.username}`).emit('queue_update', {
       position: remaining > 0 ? 1 : null,
     });
 
-    console.log(`[queue] done ${items.length} item(s) [${ids.join(',')}] for ${first.username}`);
+    console.log(`[queue] done item ${item.id} for ${item.username}`);
   } catch (err) {
-    console.error(`[queue] error on items [${ids.join(',')}]:`, err.message);
-    for (const id of ids) {
-      run(
-        `UPDATE queue SET status = 'error', completed_at = strftime('%s','now') WHERE id = ?`,
-        [id]
-      );
-    }
-    io.to(`user:${first.username}`).emit('chat_response', {
+    console.error(`[queue] error on item ${item.id}:`, err.message);
+    run(
+      `UPDATE queue SET status = 'error', completed_at = strftime('%s','now') WHERE id = ?`,
+      [item.id]
+    );
+    io.to(`user:${item.username}`).emit('chat_response', {
       content: `Sorry, I hit an error: ${err.message}`,
       created_at: Date.now(),
       error: true,
