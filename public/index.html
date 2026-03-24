@@ -7,6 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="/manifest.json">
   <title>Claw Hub</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -362,19 +363,9 @@
     .welcome-block h2 { font-size: 0.95rem; color: #666; font-weight: 600; margin-bottom: 0.4rem; }
     .welcome-block p { font-size: 0.8rem; line-height: 1.6; }
 
-    #queue-bar {
-      padding: 0.3rem 1.2rem;
-      font-size: 0.7rem;
-      color: var(--muted);
-      border-top: 1px solid var(--border);
-      background: var(--bg2);
-      min-height: 1.6rem;
-      flex-shrink: 0;
-    }
-
     .input-area {
-      padding: 0.7rem 1rem;
-      padding-bottom: max(0.7rem, env(safe-area-inset-bottom, 0.7rem));
+      padding: 0.5rem 1rem;
+      padding-bottom: max(0.5rem, env(safe-area-inset-bottom, 0.5rem));
       border-top: 1px solid var(--border);
       background: var(--bg2);
       display: flex;
@@ -624,6 +615,112 @@
       font-style: italic;
     }
 
+    /* ── iOS-style delight ───────────────────────────────────────────── */
+
+    /* Ripple */
+    .ripple-host { position: relative; overflow: hidden; }
+    .ripple-wave {
+      position: absolute; border-radius: 50%; pointer-events: none;
+      background: rgba(255,255,255,0.1);
+      transform: scale(0); opacity: 1;
+      animation: rippleAnim 0.55s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+    @keyframes rippleAnim { to { transform: scale(2.5); opacity: 0; } }
+
+    /* Card depth — spring depress */
+    .build-card, .repo-card, .blog-card, .stat-card {
+      will-change: transform;
+      transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1),
+                  box-shadow 0.12s ease, border-color 0.2s,
+                  background 0.2s, filter 0.12s;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    }
+    .build-card:active, .repo-card:active, .blog-card:active {
+      transform: scale(0.96) !important;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important;
+      filter: brightness(0.88);
+    }
+    .stat-card:active {
+      transform: scale(0.97);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+      filter: brightness(0.9);
+    }
+    @media (hover: hover) {
+      .build-card:hover, .repo-card:hover, .blog-card:hover {
+        box-shadow: 0 4px 16px rgba(124,58,237,0.15), 0 2px 6px rgba(0,0,0,0.3);
+        transform: translateY(-1px);
+      }
+    }
+
+    /* Input focus glow ring */
+    #chat-input { transition: border-color 0.2s, box-shadow 0.2s; }
+    #chat-input:focus {
+      border-color: rgba(124,58,237,0.6) !important;
+      box-shadow: 0 0 0 3px rgba(124,58,237,0.12), 0 0 12px rgba(124,58,237,0.08);
+    }
+
+    /* Send button glow burst */
+    #send-btn {
+      transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1),
+                  box-shadow 0.2s, opacity 0.15s;
+    }
+    #send-btn:not(:disabled):active { transform: scale(0.82) !important; }
+    #send-btn.fired { animation: sendGlow 0.4s ease-out; }
+    @keyframes sendGlow {
+      0%  { box-shadow: 0 0 0px rgba(124,58,237,0); transform: scale(0.82); }
+      40% { box-shadow: 0 0 18px rgba(124,58,237,0.7); transform: scale(1.12); }
+      100%{ box-shadow: 0 0 0px rgba(124,58,237,0); transform: scale(1); }
+    }
+
+    /* Scroll-to-bottom FAB */
+    #scroll-fab {
+      position: absolute; bottom: 4.5rem; right: 1rem;
+      width: 34px; height: 34px; border-radius: 50%;
+      background: var(--bg3); border: 1px solid var(--border2);
+      color: var(--muted); font-size: 0.9rem; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transform: translateY(8px) scale(0.8);
+      transition: opacity 0.2s, transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+      z-index: 5; box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+      touch-action: manipulation;
+    }
+    #scroll-fab.visible { opacity: 1; pointer-events: auto; transform: translateY(0) scale(1); }
+    #scroll-fab:active { transform: scale(0.88) !important; }
+
+    /* Badge pop */
+    @keyframes badgePop {
+      0%  { transform: scale(0); }
+      65% { transform: scale(1.25); }
+      100%{ transform: scale(1); }
+    }
+    .badge.pop { animation: badgePop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1); }
+
+    /* Copy toast */
+    #copy-toast {
+      position: fixed; bottom: 5.5rem; left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      background: rgba(20,20,35,0.96); border: 1px solid var(--border2);
+      border-radius: 999px; padding: 0.35rem 0.9rem;
+      font-size: 0.72rem; color: var(--text);
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.18s, transform 0.18s;
+      z-index: 100; backdrop-filter: blur(8px);
+    }
+    #copy-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* Message long-press highlight */
+    .msg.pressing { filter: brightness(1.18); transition: filter 0.1s; }
+
+    /* Nav spring on mobile */
+    @media (max-width: 600px) {
+      .nav-item {
+        transition: background 0.1s, color 0.1s,
+                    transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+      .nav-item:active { transform: scale(0.85); }
+    }
+
     /* ── Skeleton loading ────────────────────────────────────────────── */
     @keyframes shimmer {
       0% { background-position: -200% 0; }
@@ -740,9 +837,27 @@
     @media (min-width: 601px) {
       .mobile-header { display: none; }
     }
+
+    /* ── Desktop enhancements ──────────────────────────────────────── */
+    @media (min-width: 900px) {
+      .msg { max-width: 65%; }
+      #messages { padding: 1.2rem 2rem; }
+      .input-area { padding: 0.6rem 2rem; }
+      .stat-grid { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+      .panel-body { padding: 1.5rem 2rem; }
+      .build-grid { padding: 0 2rem 1.5rem; }
+    }
+    @media (min-width: 1200px) {
+      .msg { max-width: 55%; }
+      #messages { padding: 1.5rem 3rem; }
+      .input-area { padding: 0.8rem 3rem; }
+      .panel-body { padding: 2rem 3rem; }
+      .build-grid { padding: 0 3rem 2rem; }
+    }
   </style>
 </head>
 <body>
+<div id="copy-toast">copied ✓</div>
 <div id="app">
 
   <!-- ── Sidebar ── -->
@@ -790,7 +905,7 @@
     <div id="panel-container">
 
       <!-- Chat panel -->
-      <div class="panel" id="panel-chat">
+      <div class="panel" id="panel-chat" style="position:relative;">
         <div class="panel-header">
           <span class="status-dot" id="status-dot"></span>
           <h2>Claw</h2>
@@ -816,7 +931,7 @@
             <span class="typing-quip"></span>
           </div>
         </div>
-        <div id="queue-bar"></div>
+        <button id="scroll-fab" onclick="scrollToBottom()" title="Scroll to bottom">↓</button>
         <div class="input-area">
           <textarea id="chat-input" rows="1" placeholder="say something…"
                     oninput="autoResize(this)" onkeydown="chatKey(event)"></textarea>
@@ -843,7 +958,7 @@
         </div>
         <div class="panel-body">
           <div class="repo-hint">
-            Ask <strong>Claw</strong> in chat to add your repo — just share the name, URL, and a description.
+            Projects are <strong>auto-tracked</strong> here — every build gets a repo entry, whether it lives in this codebase or has its own URL.
           </div>
           <div class="repo-list" id="repo-list">
             <div class="skeleton-card"><div class="skeleton"></div><div class="skeleton short"></div></div>
@@ -1479,7 +1594,7 @@
     const el = document.getElementById('repo-list');
     document.getElementById('repo-count').textContent = `${repos.length} repo${repos.length !== 1 ? 's' : ''}`;
     if (!repos.length) {
-      el.innerHTML = '<div class="empty-state"><div class="icon">📦</div>No repos yet — ask Claw in chat to add yours.</div>';
+      el.innerHTML = '<div class="empty-state"><div class="icon">📦</div>No projects yet — build something and it\'ll show up here.</div>';
       return;
     }
     el.innerHTML = repos.map(r => `
@@ -1493,6 +1608,7 @@
         <div class="repo-meta">by ${esc(r.username)} · ${reltime(r.created_at)}</div>
       </div>
     `).join('');
+    el.querySelectorAll('.repo-card').forEach(c => c.addEventListener('pointerdown', e => ripple(c, e)));
   }
 
   // ── Blog ──────────────────────────────────────────────────────────
@@ -1516,13 +1632,20 @@
         <div class="blog-meta">${reltime(p.created_at)}</div>
       </div>
     `).join('');
+    el.querySelectorAll('.blog-card').forEach(c => c.addEventListener('pointerdown', e => ripple(c, e)));
   }
 
   function updateBlogBadge() {
     const badge = document.getElementById('blog-badge');
+    const wasHidden = badge.style.display === 'none' || !badge.style.display;
     if (newBlogSinceView > 0) {
       badge.textContent = newBlogSinceView;
       badge.style.display = '';
+      if (wasHidden) {
+        badge.classList.remove('pop');
+        void badge.offsetWidth;
+        badge.classList.add('pop');
+      }
     } else {
       badge.style.display = 'none';
     }
@@ -1556,6 +1679,77 @@
   function haptic(ms = 10) {
     try { navigator.vibrate?.(ms); } catch {}
   }
+
+  // ── Ripple effect ─────────────────────────────────────────────────
+  function ripple(el, e) {
+    const rect = el.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    const x = (e.clientX || rect.left + rect.width / 2) - rect.left - size / 2;
+    const y = (e.clientY || rect.top + rect.height / 2) - rect.top - size / 2;
+    const wave = document.createElement('span');
+    wave.className = 'ripple-wave';
+    wave.style.cssText = `width:${size}px;height:${size}px;left:${x}px;top:${y}px`;
+    el.classList.add('ripple-host');
+    el.appendChild(wave);
+    wave.addEventListener('animationend', () => wave.remove(), { once: true });
+  }
+
+  // Wire ripple to all interactive cards
+  document.querySelectorAll('.build-card, .nav-item').forEach(el => {
+    el.addEventListener('pointerdown', e => ripple(el, e));
+  });
+
+  // ── Send button glow burst ────────────────────────────────────────
+  const sendBtn = document.getElementById('send-btn');
+  sendBtn.addEventListener('click', () => {
+    sendBtn.classList.remove('fired');
+    void sendBtn.offsetWidth; // reflow to restart animation
+    sendBtn.classList.add('fired');
+    sendBtn.addEventListener('animationend', () => sendBtn.classList.remove('fired'), { once: true });
+  });
+
+  // ── Scroll-to-bottom FAB ──────────────────────────────────────────
+  const fab = document.getElementById('scroll-fab');
+  msgBox.addEventListener('scroll', () => {
+    const nearBottom = msgBox.scrollHeight - msgBox.scrollTop - msgBox.clientHeight < 120;
+    fab.classList.toggle('visible', !nearBottom);
+  }, { passive: true });
+
+  // ── Long-press message to copy ────────────────────────────────────
+  let pressTimer = null;
+  const toast = document.getElementById('copy-toast');
+  let toastTimer = null;
+
+  function showCopyToast(text) {
+    toast.textContent = 'copied ✓';
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
+    haptic(15);
+  }
+
+  msgBox.addEventListener('pointerdown', e => {
+    const msg = e.target.closest('.msg.user, .msg.claw');
+    if (!msg) return;
+    msg.classList.add('pressing');
+    pressTimer = setTimeout(() => {
+      const content = msg.querySelector('.md-body')?.textContent || msg.querySelector('span:first-child')?.textContent || '';
+      if (content) {
+        navigator.clipboard?.writeText(content.trim()).then(() => showCopyToast());
+      }
+      msg.classList.remove('pressing');
+      haptic(25);
+    }, 550);
+  });
+  msgBox.addEventListener('pointerup', e => {
+    clearTimeout(pressTimer);
+    e.target.closest('.msg')?.classList.remove('pressing');
+  });
+  msgBox.addEventListener('pointermove', e => {
+    clearTimeout(pressTimer);
+    e.target.closest('.msg')?.classList.remove('pressing');
+  });
+
 
   // ── Socket.io ─────────────────────────────────────────────────────
   const socket = io({ reconnectionDelay: 1000, reconnectionDelayMax: 8000 });
@@ -1623,6 +1817,13 @@
     appendMsg('claw', data.content, Date.now());
     document.getElementById('queue-status').textContent = '';
     haptic(8);
+    // Push notification if page is hidden (queued response came back)
+    if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+      new Notification('Claw', {
+        body: data.content.replace(/[#*_`]/g, '').slice(0, 120),
+        tag: 'claw-response',
+      });
+    }
   });
 
   socket.on('queue_update', data => {
@@ -1748,6 +1949,26 @@
       if (next >= 0 && next < PANELS.length) showPanel(PANELS[next]);
     }, { passive: true });
   })();
+
+  // ── Service Worker & Notifications ──────────────────────────────
+  async function registerServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    try {
+      await navigator.serviceWorker.register('/sw.js');
+    } catch (e) {
+      console.log('[sw] registration failed:', e.message);
+    }
+  }
+
+  // Request notification permission on first user interaction
+  document.addEventListener('click', function reqNotif() {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+    document.removeEventListener('click', reqNotif);
+  }, { once: true });
+
+  registerServiceWorker();
 
   // ── Start ─────────────────────────────────────────────────────────
   init();
