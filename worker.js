@@ -226,20 +226,44 @@ async function processNext(io) {
   }
 }
 
-function startWorker(io) {
-  if (process.env.NODE_ENV === 'test') return;
-
-  // Reclaim items stuck in 'processing' from a previous crash/restart
+function reclaimStale(io) {
+  // On startup: reclaim ALL processing items (process just started, nothing can be legitimately in-flight)
+  // During runtime: reclaim items processing longer than STALE_THRESHOLD_S (timeout didn't fire for some reason)
   const stale = all(
-    `SELECT q.id, u.username FROM queue q JOIN users u ON q.user_id = u.id
-     WHERE q.status = 'processing' AND (strftime('%s','now') - q.started_at) > ?`,
-    [STALE_THRESHOLD_S]
+    `SELECT q.id, q.user_id, u.username FROM queue q JOIN users u ON q.user_id = u.id
+     WHERE q.status = 'processing'`,
+    []
   );
   for (const s of stale) {
     run("UPDATE queue SET status = 'pending', started_at = NULL WHERE id = ?", [s.id]);
     console.log(`[queue] reclaimed stale item ${s.id} for ${s.username}`);
+    // Notify user so they know it's back in queue
+    if (io) io.to(`user:${s.username}`).emit('queue_update', { position: 0 });
   }
-  if (stale.length) console.log(`[queue] reclaimed ${stale.length} stale item(s)`);
+  if (stale.length) console.log(`[queue] reclaimed ${stale.length} stale item(s) on startup`);
+}
+
+function reclaimOverdue(io) {
+  // Periodic check: reclaim items stuck in processing longer than the timeout
+  const stale = all(
+    `SELECT q.id, q.user_id, u.username FROM queue q JOIN users u ON q.user_id = u.id
+     WHERE q.status = 'processing'
+       AND q.started_at IS NOT NULL
+       AND (CAST(strftime('%s','now') AS INTEGER) - CAST(q.started_at AS INTEGER)) > ?`,
+    [STALE_THRESHOLD_S]
+  );
+  for (const s of stale) {
+    run("UPDATE queue SET status = 'pending', started_at = NULL WHERE id = ?", [s.id]);
+    console.log(`[queue] reclaimed overdue item ${s.id} for ${s.username}`);
+    if (io) io.to(`user:${s.username}`).emit('queue_update', { position: 0 });
+  }
+}
+
+function startWorker(io) {
+  if (process.env.NODE_ENV === 'test') return;
+
+  // On startup: unconditionally reclaim ALL processing items — nothing is legitimately in-flight yet
+  reclaimStale(io);
 
   console.log(`[queue] worker started, polling every ${POLL_INTERVAL_MS}ms`);
 
@@ -253,7 +277,10 @@ function startWorker(io) {
 
   setImmediate(tick);
   const timer = setInterval(tick, POLL_INTERVAL_MS);
+  // Periodic overdue check every 60s (catches anything the timeout missed)
+  const overdueTimer = setInterval(() => reclaimOverdue(io), 60000);
   timer.unref();
+  overdueTimer.unref();
   return timer;
 }
 
