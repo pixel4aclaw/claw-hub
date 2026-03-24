@@ -42,6 +42,7 @@ function initSchema() {
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL COLLATE NOCASE,
+      session_id TEXT,
       created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     );
 
@@ -122,6 +123,8 @@ function migrate() {
       topic TEXT DEFAULT '',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     )`);
+    // Add session_id column to users table for agent SDK session resumption
+    try { db.run(`ALTER TABLE users ADD COLUMN session_id TEXT`); } catch (_) {}
     persist();
   } catch (e) {
     console.error('[db] migration error:', e.message);

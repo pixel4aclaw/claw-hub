@@ -3,57 +3,62 @@
 /**
  * Claw Hub — Queue Worker
  *
- * Polls the queue table for pending items, calls the Claude API,
- * saves the response, and emits it to the user via Socket.io.
+ * Polls the queue table for pending items, runs the full Claude agent
+ * (with tools: bash, file read/write, web search), saves responses,
+ * and emits them to the user via Socket.io.
+ *
+ * Each user gets a persistent agent session — conversation context,
+ * tool state, and memory carry across messages automatically.
  */
 
-const fs = require('fs');
-const os = require('os');
 const path = require('path');
+const { query } = require('@anthropic-ai/claude-agent-sdk');
 const { get, all, insert, run } = require('./db');
 
-const MODEL = 'claude-haiku-4-5-20251001';
 const POLL_INTERVAL_MS = 2000;
-const MAX_HISTORY = 40; // messages to include in context
 
-const SYSTEM_PROMPT = `You are Claw, an AI assistant embedded in Claw Hub — a collaborative app where developers experiment with building AI-powered projects. You help users write code, build features, answer questions, and explore ideas together.
+const SYSTEM_PROMPT = `You are Claw, the AI at the heart of Claw Hub — a collaborative app where developers experiment with building AI-powered projects. You live in the codebase you're talking about.
 
-Be direct and technically sharp. Keep responses concise unless depth is genuinely needed. You can reference the hub context (repos, other users, blog posts) when relevant. When a user asks you to build something or add a feature, you actually do it — you have access to the server and can make changes.`;
+You have full access to the server and can actually implement features, fix bugs, write code, run commands, and make changes. When a user asks you to build something, you build it. When they ask a question, answer it directly and technically.
 
-function getToken() {
-  try {
-    const credPath = path.join(os.homedir(), '.claude', '.credentials.json');
-    const creds = JSON.parse(fs.readFileSync(credPath, 'utf8'));
-    return creds.oauthAccessToken || creds.claudeAiOauth?.accessToken || null;
-  } catch { return null; }
-}
+Be sharp and brief. Match the energy of a senior dev pair-programming with a peer — direct, no fluff, show your work when it matters.`;
 
-async function callClaude(messages) {
-  const token = getToken();
-  if (!token) throw new Error('No API token available');
+async function callAgent(username, userId, userMessage) {
+  // Look up any existing session for this user
+  const user = get('SELECT session_id FROM users WHERE id = ?', [userId]);
+  const existingSessionId = user?.session_id;
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': token,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 1024,
-      system: SYSTEM_PROMPT,
-      messages,
-    }),
-  });
+  const options = {
+    cwd: __dirname,
+    allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write', 'WebSearch', 'WebFetch'],
+    permissionMode: 'bypassPermissions',
+    allowDangerouslySkipPermissions: true,
+    maxTurns: 30,
+    systemPrompt: `${SYSTEM_PROMPT}\n\nYou're speaking with ${username}.`,
+  };
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`Claude API ${res.status}: ${text.slice(0, 200)}`);
+  if (existingSessionId) {
+    options.resume = existingSessionId;
   }
 
-  const data = await res.json();
-  return data.content?.[0]?.text || '';
+  let result = '';
+  let newSessionId = null;
+
+  for await (const message of query({ prompt: userMessage, options })) {
+    if (message.type === 'system' && message.subtype === 'init') {
+      newSessionId = message.session_id;
+    }
+    if ('result' in message) {
+      result = message.result || '';
+    }
+  }
+
+  // Persist the session ID so the next message resumes with full context
+  if (newSessionId && newSessionId !== existingSessionId) {
+    run('UPDATE users SET session_id = ? WHERE id = ?', [newSessionId, userId]);
+  }
+
+  return result;
 }
 
 async function processNext(io) {
@@ -66,7 +71,7 @@ async function processNext(io) {
     ORDER BY q.id ASC
     LIMIT 1
   `);
-  if (!item) return; // nothing to do
+  if (!item) return;
 
   // Mark as processing (prevent double-pick)
   run(
@@ -74,49 +79,22 @@ async function processNext(io) {
     [item.id]
   );
 
-  // Verify we actually got the lock (another process could have taken it)
+  // Verify we actually got the lock
   const locked = get('SELECT id FROM queue WHERE id = ? AND status = ?', [item.id, 'processing']);
   if (!locked) return;
 
   console.log(`[queue] processing item ${item.id} for ${item.username}`);
 
   try {
-    // Fetch message history for this user (capped to last MAX_HISTORY)
-    const history = all(
-      `SELECT role, content FROM messages
-       WHERE user_id = ?
-       ORDER BY created_at ASC`,
-      [item.user_id]
-    );
-
-    // Convert to Claude message format (user/assistant only — no system)
-    // Collapse consecutive same-role messages (can happen when many messages
-    // are sent before any responses arrive, producing non-alternating history)
-    const apiMessages = [];
-    for (const msg of history
-      .filter(m => m.role === 'user' || m.role === 'assistant')
-      .slice(-MAX_HISTORY)) {
-      const last = apiMessages[apiMessages.length - 1];
-      if (last && last.role === msg.role) {
-        last.content += '\n\n' + msg.content;
-      } else {
-        apiMessages.push({ role: msg.role, content: msg.content });
-      }
-    }
-
-    // Claude API requires conversation to end with a user turn.
-    // If trailing assistant messages exist (from concurrent processing),
-    // drop them so the API sees a valid alternating sequence.
-    while (apiMessages.length > 0 && apiMessages[apiMessages.length - 1].role === 'assistant') {
-      apiMessages.pop();
-    }
-    if (apiMessages.length === 0) throw new Error('No user messages in history');
+    // Fetch the specific user message for this queue item
+    const msg = get('SELECT content FROM messages WHERE id = ?', [item.message_id]);
+    if (!msg) throw new Error(`message ${item.message_id} not found`);
 
     // Emit queue position = 0 (we're thinking now)
     io.to(`user:${item.username}`).emit('queue_update', { position: 0 });
 
-    const reply = await callClaude(apiMessages);
-    if (!reply) throw new Error('Empty response from Claude');
+    const reply = await callAgent(item.username, item.user_id, msg.content);
+    if (!reply) throw new Error('Empty response from agent');
 
     // Save assistant message
     insert(
@@ -136,16 +114,14 @@ async function processNext(io) {
       created_at: Date.now(),
     });
 
-    // Check if they have more pending items and update their position
+    // Update queue status indicator
     const remaining = (get(
       `SELECT COUNT(*) as c FROM queue WHERE user_id = ? AND status = 'pending'`,
       [item.user_id]
     ) || {}).c || 0;
-    if (remaining > 0) {
-      io.to(`user:${item.username}`).emit('queue_update', { position: 1 });
-    } else {
-      io.to(`user:${item.username}`).emit('queue_update', { position: null });
-    }
+    io.to(`user:${item.username}`).emit('queue_update', {
+      position: remaining > 0 ? 1 : null,
+    });
 
     console.log(`[queue] done item ${item.id} for ${item.username}`);
   } catch (err) {
@@ -163,7 +139,7 @@ async function processNext(io) {
 }
 
 function startWorker(io) {
-  if (process.env.NODE_ENV === 'test') return; // don't run in tests
+  if (process.env.NODE_ENV === 'test') return;
 
   console.log(`[queue] worker started, polling every ${POLL_INTERVAL_MS}ms`);
 
@@ -177,7 +153,7 @@ function startWorker(io) {
 
   setImmediate(tick);
   const timer = setInterval(tick, POLL_INTERVAL_MS);
-  timer.unref(); // don't block process exit
+  timer.unref();
   return timer;
 }
 
