@@ -155,6 +155,32 @@ app.post('/api/chat', async (req, res) => {
   res.json({ ok: true, queuePosition: position });
 });
 
+// ── Retry last failed message ─────────────────────────────────────────────────
+
+app.post('/api/chat/retry', async (req, res) => {
+  await getDb();
+  const user = get('SELECT id FROM users WHERE username = ?', [req.user]);
+  if (!user) return res.status(404).json({ error: 'user not found' });
+
+  // Find the most recent errored queue item for this user
+  const errored = get(
+    "SELECT q.id, q.message_id FROM queue q WHERE q.user_id = ? AND q.status = 'error' ORDER BY q.id DESC LIMIT 1",
+    [user.id]
+  );
+  if (!errored) return res.status(404).json({ error: 'no failed message to retry' });
+
+  // Reset it to pending
+  run("UPDATE queue SET status = 'pending', started_at = NULL, completed_at = NULL WHERE id = ?", [errored.id]);
+
+  const position = (get(
+    "SELECT COUNT(*) as c FROM queue WHERE status IN ('pending','processing') AND id < ?",
+    [errored.id]
+  ) || {}).c || 0;
+
+  io.to(`user:${req.user}`).emit('queue_update', { position });
+  res.json({ ok: true, queuePosition: position });
+});
+
 // ── Queue status (so frontend can restore indicator on refresh) ──────────────
 
 app.get('/api/queue-status', async (req, res) => {

@@ -1379,9 +1379,33 @@
     input.value = '';
     autoResize(input);
     haptic(12);
-    appendMsg('user', text, Date.now());
     const btn = document.getElementById('send-btn');
     btn.disabled = true;
+
+    // "try again" / "retry" requeues the last failed message instead of sending new
+    const isRetry = /^(try again|retry)$/i.test(text);
+    if (isRetry) {
+      appendMsg('system', 'retrying last message…', Date.now());
+      showTyping();
+      try {
+        const res = await fetch('/api/chat/retry', { method: 'POST' }).then(r => r.json());
+        if (res.error) {
+          hideTyping();
+          appendMsg('system', res.error === 'no failed message to retry' ? 'nothing to retry — send a new message' : res.error);
+        } else {
+          const q = document.getElementById('queue-status');
+          q.textContent = res.queuePosition === 0 ? 'thinking…' : `#${res.queuePosition + 1} in queue`;
+        }
+      } catch {
+        hideTyping();
+        appendMsg('system', 'failed to retry');
+      }
+      btn.disabled = false;
+      input.focus();
+      return;
+    }
+
+    appendMsg('user', text, Date.now());
     showTyping();
     try {
       const res = await fetch('/api/chat', {

@@ -21,6 +21,13 @@ const { get, all, insert, run } = require('./db');
 const POLL_INTERVAL_MS = 2000;
 const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 const STALE_THRESHOLD_S = 300; // 5 minutes in seconds
+const MAX_RETRIES = 2; // total attempts per queue item
+const BACKOFF_MS = 3000; // pause between retries
+const ALERT_THRESHOLD = 3; // consecutive errors before alerting admin
+
+// Track consecutive errors globally (reset on any success)
+let consecutiveErrors = 0;
+let alertSent = false;
 
 const SYSTEM_PROMPT = `You are Claw, the AI at the heart of Claw Hub — a collaborative app where ~40 developers experiment with building AI-powered projects. You live inside the codebase on a Pixel 4a running Termux.
 
@@ -32,13 +39,10 @@ Be warm but sharp. Talk like a senior dev pair-programming with a peer — direc
 
 If a user sends multiple messages at once, address them all in a single response — don't repeat yourself across messages.`;
 
-async function callAgent(username, userId, userMessage) {
-  // Look up any existing session for this user
+async function callAgent(username, userId, userMessage, forceNewSession) {
   const user = get('SELECT session_id FROM users WHERE id = ?', [userId]);
-  const existingSessionId = user?.session_id;
+  const existingSessionId = forceNewSession ? null : user?.session_id;
 
-  // Fetch recent conversation history from DB so the agent has full context
-  // (covers messages from before the SDK migration and across session boundaries)
   const history = all(
     `SELECT role, content FROM messages WHERE user_id = ? ORDER BY id DESC LIMIT 50`,
     [userId]
@@ -76,7 +80,6 @@ async function callAgent(username, userId, userMessage) {
     }
   }
 
-  // Persist the session ID so the next message resumes with full context
   if (newSessionId && newSessionId !== existingSessionId) {
     run('UPDATE users SET session_id = ? WHERE id = ?', [newSessionId, userId]);
   }
@@ -84,8 +87,32 @@ async function callAgent(username, userId, userMessage) {
   return result;
 }
 
+function friendlyError(err) {
+  const msg = err.message || '';
+  if (msg.includes('timed out'))
+    return 'That took too long and I had to stop \u2014 this can happen with complex requests. Your message is saved, so just send **try again** and I\'ll pick up where I left off.';
+  if (msg.includes('Empty response'))
+    return 'I processed your message but came back empty-handed \u2014 probably a hiccup. Send **try again** and I\'ll give it another shot.';
+  if (msg.includes('400') || msg.includes('invalid_request'))
+    return 'Something went wrong with my connection to the AI service. This usually resolves on its own \u2014 try sending your message again in a minute.';
+  if (msg.includes('429') || msg.includes('rate'))
+    return 'I\'m being rate-limited right now \u2014 too many requests. Give it a couple minutes and try again.';
+  return `Something went wrong on my end (${msg}). Your message is saved \u2014 send **try again** to retry.`;
+}
+
+async function notifyAdmin(io, message) {
+  // Find admin user (first user, or user with username matching known admin)
+  const admin = get("SELECT id, username FROM users WHERE id = 1");
+  if (!admin) return;
+  console.error(`[queue] ALERT: ${message}`);
+  io.to(`user:${admin.username}`).emit('chat_response', {
+    content: `⚠️ **Worker alert:** ${message}`,
+    created_at: Date.now(),
+    error: true,
+  });
+}
+
 async function processNext(io) {
-  // Grab the oldest pending item
   const item = get(`
     SELECT q.id, q.user_id, q.message_id, u.username
     FROM queue q
@@ -106,55 +133,96 @@ async function processNext(io) {
 
   console.log(`[queue] processing item ${item.id} for ${item.username}`);
 
-  try {
-    const msg = get('SELECT content FROM messages WHERE id = ?', [item.message_id]);
-    if (!msg) throw new Error(`message ${item.message_id} not found`);
+  const msg = get('SELECT content FROM messages WHERE id = ?', [item.message_id]);
+  if (!msg) {
+    run(`UPDATE queue SET status = 'error', completed_at = strftime('%s','now') WHERE id = ?`, [item.id]);
+    return;
+  }
 
-    io.to(`user:${item.username}`).emit('queue_update', { position: 0 });
+  io.to(`user:${item.username}`).emit('queue_update', { position: 0 });
 
-    const reply = await Promise.race([
-      callAgent(item.username, item.user_id, msg.content),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Agent timed out after 5 minutes')), AGENT_TIMEOUT_MS)
-      ),
-    ]);
-    if (!reply) throw new Error('Empty response from agent');
+  let lastErr = null;
 
-    insert(
-      'INSERT INTO messages (user_id, role, content) VALUES (?,?,?)',
-      [item.user_id, 'assistant', reply]
-    );
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      // On retry after failure, try a fresh session (session might be corrupted)
+      const forceNewSession = attempt > 1;
+      if (forceNewSession) {
+        console.log(`[queue] item ${item.id} retry ${attempt}/${MAX_RETRIES} (fresh session)`);
+      }
 
-    run(
-      `UPDATE queue SET status = 'done', completed_at = strftime('%s','now') WHERE id = ?`,
-      [item.id]
-    );
+      const reply = await Promise.race([
+        callAgent(item.username, item.user_id, msg.content, forceNewSession),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Agent timed out after 5 minutes')), AGENT_TIMEOUT_MS)
+        ),
+      ]);
+      if (!reply) throw new Error('Empty response from agent');
 
-    io.to(`user:${item.username}`).emit('chat_response', {
-      content: reply,
-      created_at: Date.now(),
-    });
+      // Success
+      insert(
+        'INSERT INTO messages (user_id, role, content) VALUES (?,?,?)',
+        [item.user_id, 'assistant', reply]
+      );
 
-    const remaining = (get(
-      `SELECT COUNT(*) as c FROM queue WHERE user_id = ? AND status = 'pending'`,
-      [item.user_id]
-    ) || {}).c || 0;
-    io.to(`user:${item.username}`).emit('queue_update', {
-      position: remaining > 0 ? 1 : null,
-    });
+      run(
+        `UPDATE queue SET status = 'done', completed_at = strftime('%s','now') WHERE id = ?`,
+        [item.id]
+      );
 
-    console.log(`[queue] done item ${item.id} for ${item.username}`);
-  } catch (err) {
-    console.error(`[queue] error on item ${item.id}:`, err.message);
-    run(
-      `UPDATE queue SET status = 'error', completed_at = strftime('%s','now') WHERE id = ?`,
-      [item.id]
-    );
-    io.to(`user:${item.username}`).emit('chat_response', {
-      content: `Sorry, I hit an error: ${err.message}`,
-      created_at: Date.now(),
-      error: true,
-    });
+      io.to(`user:${item.username}`).emit('chat_response', {
+        content: reply,
+        created_at: Date.now(),
+      });
+
+      const remaining = (get(
+        `SELECT COUNT(*) as c FROM queue WHERE user_id = ? AND status = 'pending'`,
+        [item.user_id]
+      ) || {}).c || 0;
+      io.to(`user:${item.username}`).emit('queue_update', {
+        position: remaining > 0 ? 1 : null,
+      });
+
+      console.log(`[queue] done item ${item.id} for ${item.username}${attempt > 1 ? ` (attempt ${attempt})` : ''}`);
+
+      // Reset error tracking on success
+      consecutiveErrors = 0;
+      alertSent = false;
+      return;
+    } catch (err) {
+      lastErr = err;
+      console.error(`[queue] attempt ${attempt}/${MAX_RETRIES} failed for item ${item.id}: ${err.message}`);
+
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, BACKOFF_MS));
+      }
+    }
+  }
+
+  // All retries exhausted
+  console.error(`[queue] giving up on item ${item.id}: ${lastErr.message}`);
+  run(
+    `UPDATE queue SET status = 'error', completed_at = strftime('%s','now') WHERE id = ?`,
+    [item.id]
+  );
+
+  // Send user-friendly error
+  const userMsg = friendlyError(lastErr);
+  insert(
+    'INSERT INTO messages (user_id, role, content) VALUES (?,?,?)',
+    [item.user_id, 'assistant', userMsg]
+  );
+  io.to(`user:${item.username}`).emit('chat_response', {
+    content: userMsg,
+    created_at: Date.now(),
+    error: true,
+  });
+
+  // Track consecutive failures and alert admin
+  consecutiveErrors++;
+  if (consecutiveErrors >= ALERT_THRESHOLD && !alertSent) {
+    alertSent = true;
+    notifyAdmin(io, `${consecutiveErrors} consecutive queue failures. Last error: ${lastErr.message}. Worker may need attention.`);
   }
 }
 
