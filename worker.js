@@ -70,6 +70,7 @@ async function callAgent(username, userId, userMessage, forceNewSession) {
 
   let result = '';
   let newSessionId = null;
+  let rateLimitedUntil = 0;
 
   for await (const message of query({ prompt: userMessage, options })) {
     if (message.type === 'system' && message.subtype === 'init') {
@@ -78,15 +79,20 @@ async function callAgent(username, userId, userMessage, forceNewSession) {
     if ('result' in message) {
       result = message.result || '';
     }
-    // Debug: log unexpected message shapes
-    if (message.type && !['system', 'assistant', 'user', 'tool', 'result'].includes(message.type)) {
-      console.log(`[queue] sdk msg type=${message.type} subtype=${message.subtype} keys=${Object.keys(message).join(',')}`);
-    }
-    if (message.type === 'result') {
-      console.log(`[queue] sdk result subtype=${message.subtype} result_len=${(message.result||'').length}`);
+    if (message.type === 'rate_limit_event') {
+      const info = message.rate_limit_info || {};
+      const resetSec = info.resetAt || info.reset_at || info.reset || 0;
+      rateLimitedUntil = resetSec ? resetSec * 1000 : Date.now() + 60000;
+      const waitMin = Math.ceil((rateLimitedUntil - Date.now()) / 60000);
+      console.log(`[queue] rate limited, resets in ~${waitMin}min`);
     }
   }
-  console.log(`[queue] callAgent done, result_len=${result.length}`);
+
+  // If we were rate limited and got no result, propagate a specific error
+  if (!result && rateLimitedUntil > Date.now()) {
+    const waitMin = Math.ceil((rateLimitedUntil - Date.now()) / 60000);
+    throw Object.assign(new Error(`rate limited — resets in ~${waitMin}min`), { rateLimitedUntil });
+  }
 
   if (newSessionId && newSessionId !== existingSessionId) {
     run('UPDATE users SET session_id = ? WHERE id = ?', [newSessionId, userId]);
@@ -103,8 +109,8 @@ function friendlyError(err) {
     return 'I processed your message but came back empty-handed \u2014 probably a hiccup. Send **try again** and I\'ll give it another shot.';
   if (msg.includes('400') || msg.includes('invalid_request'))
     return 'Something went wrong with my connection to the AI service. This usually resolves on its own \u2014 try sending your message again in a minute.';
-  if (msg.includes('429') || msg.includes('rate'))
-    return 'I\'m being rate-limited right now \u2014 too many requests. Give it a couple minutes and try again.';
+  if (msg.includes('rate limited') || msg.includes('429') || msg.includes('rate'))
+    return 'I\'m being rate-limited right now \u2014 your message is saved and will process automatically when the limit clears. No need to resend.';
   return `Something went wrong on my end (${msg}). Your message is saved \u2014 send **try again** to retry.`;
 }
 
@@ -200,6 +206,20 @@ async function processNext(io) {
     } catch (err) {
       lastErr = err;
       console.error(`[queue] attempt ${attempt}/${MAX_RETRIES} failed for item ${item.id}: ${err.message}`);
+
+      // Rate limit: put item back as pending and stop retrying — no point hammering the API
+      if (err.rateLimitedUntil) {
+        run("UPDATE queue SET status = 'pending', started_at = NULL WHERE id = ?", [item.id]);
+        const waitMin = Math.ceil((err.rateLimitedUntil - Date.now()) / 60000);
+        console.log(`[queue] item ${item.id} requeued, rate limit clears in ~${waitMin}min`);
+        // Notify user we're waiting, not erroring
+        io.to(`user:${item.username}`).emit('chat_response', {
+          content: `I'm being rate-limited right now — your message is saved and I'll process it automatically once the limit clears (~${waitMin} min). No need to resend.`,
+          created_at: Date.now(),
+          error: true,
+        });
+        return;
+      }
 
       if (attempt < MAX_RETRIES) {
         await new Promise(r => setTimeout(r, BACKOFF_MS));
