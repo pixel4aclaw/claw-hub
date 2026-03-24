@@ -420,6 +420,31 @@
       color: var(--muted);
       margin-bottom: 0.6rem;
     }
+    .how-it-works {
+      margin-top: 1rem; border: 1px solid var(--border2); border-radius: 10px;
+      background: rgba(124,58,237,0.04); overflow: hidden;
+    }
+    .how-it-works summary {
+      padding: 0.8rem 1rem; cursor: pointer; font-size: 0.82rem;
+      font-weight: 600; color: var(--fg); list-style: none;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .how-it-works summary::-webkit-details-marker { display: none; }
+    .how-it-works summary::before {
+      content: '▸'; transition: transform 0.2s; font-size: 0.7rem;
+    }
+    .how-it-works[open] summary::before { transform: rotate(90deg); }
+    .how-body {
+      padding: 0 1rem 1rem; font-size: 0.78rem; line-height: 1.6; color: var(--fg);
+    }
+    .how-body p { margin: 0.5rem 0; }
+    .how-body ol, .how-body ul { margin: 0.5rem 0; padding-left: 1.2rem; }
+    .how-body li { margin: 0.3rem 0; }
+    .how-body code {
+      background: rgba(124,58,237,0.1); padding: 0.1rem 0.35rem;
+      border-radius: 4px; font-size: 0.72rem;
+    }
+    .how-body strong { color: var(--accent); }
     .temp-bar { display: flex; gap: 0.4rem; flex-wrap: wrap; }
     .temp-pill {
       background: var(--bg3);
@@ -1143,6 +1168,30 @@
         </div>
         <div style="font-size:0.62rem;color:#2a2a40;margin-top:0.4rem">polled ${rl.polled_at ? new Date(rl.polled_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'} · updates every 10m</div>
       </div>` : ''}
+
+      <details class="how-it-works">
+        <summary>How This Works</summary>
+        <div class="how-body">
+          <p>Every user on Claw Hub gets their own <strong>Claude agent session</strong>. When you send a message, here's what happens:</p>
+          <ol>
+            <li>Your message is added to a <strong>queue</strong> (SQLite via sql.js, in-memory with debounced disk persist).</li>
+            <li>A worker polls the queue every 2 seconds. When it picks up your message, it calls the <strong>Claude Agent SDK</strong> — not the raw chat API.</li>
+            <li>The agent runs with real tools: <code>Bash</code>, <code>Read</code>, <code>Write</code>, <code>Edit</code>, <code>Grep</code>, <code>Glob</code>, <code>WebSearch</code>, and <code>WebFetch</code>. It can actually execute code, modify files, and search the web.</li>
+            <li>Your <strong>session ID</strong> is stored in the database. Next time you send a message, the agent resumes your session with full conversation context — it remembers everything.</li>
+            <li>The response streams back to you via <strong>Socket.io</strong> in real-time.</li>
+          </ol>
+          <p><strong>Architecture:</strong></p>
+          <ul>
+            <li><strong>Server:</strong> Node.js + Express + Socket.io on a Pixel 4a running Termux</li>
+            <li><strong>Database:</strong> sql.js (SQLite compiled to WASM, runs in-process)</li>
+            <li><strong>Agent:</strong> <code>@anthropic-ai/claude-agent-sdk</code> with <code>bypassPermissions</code> mode — each user gets an independent session with up to 30 tool-use turns per message</li>
+            <li><strong>Scaling:</strong> 40 users = 40 independent sessions. No shared context window, no interference. Each session is its own conversation with its own memory.</li>
+            <li><strong>Tunnel:</strong> Cloudflare Tunnel exposes the local server to the internet</li>
+            <li><strong>Process manager:</strong> pm2 keeps the server alive — crash-only design, cold starts are cheap</li>
+          </ul>
+          <p style="color:var(--muted);font-size:0.75rem;margin-top:0.8rem">The AI you're chatting with has the same access as a developer sitting at the terminal. It's not a wrapper around a chat API — it's an agent that can do real work.</p>
+        </div>
+      </details>
     `;
   }
 
