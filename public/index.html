@@ -312,17 +312,23 @@
     /* ── Typing indicator ────────────────────────────────────────────── */
     #typing-indicator {
       display: none;
+      flex-direction: column;
       align-self: flex-start;
       background: var(--msg-claw-bg);
       border: 1px solid var(--msg-claw-border);
       border-radius: 12px;
       border-bottom-left-radius: 4px;
       padding: 0.55rem 0.85rem;
-      gap: 4px;
-      align-items: center;
+      gap: 6px;
       animation: msgIn 0.2s ease both;
+      max-width: 280px;
     }
     #typing-indicator.visible { display: flex; }
+    .typing-dots {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+    }
     .typing-dot {
       width: 6px; height: 6px; border-radius: 50%;
       background: var(--msg-claw-text);
@@ -334,6 +340,19 @@
     @keyframes typingBounce {
       0%,60%,100% { transform: translateY(0); opacity: 0.4; }
       30% { transform: translateY(-4px); opacity: 1; }
+    }
+    .typing-quip {
+      display: none;
+      font-size: 0.72rem;
+      color: var(--muted);
+      font-style: italic;
+      line-height: 1.3;
+      animation: quipFade 0.4s ease both;
+    }
+    .typing-quip.active { display: block; }
+    @keyframes quipFade {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
     }
 
     .welcome-block {
@@ -789,9 +808,12 @@
             Ask me anything, request a relay to another user, or just explore.</p>
           </div>
           <div id="typing-indicator">
-            <div class="typing-dot"></div>
-            <div class="typing-dot"></div>
-            <div class="typing-dot"></div>
+            <div class="typing-dots">
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+              <div class="typing-dot"></div>
+            </div>
+            <span class="typing-quip"></span>
           </div>
         </div>
         <div id="queue-bar"></div>
@@ -901,12 +923,21 @@
     // Reposition typing indicator at end
     msgBox.appendChild(typingEl);
 
-    // If the last message is from the user, a response is still pending.
-    // Show the typing indicator immediately so users know on reload.
-    const lastMsg = msgs[msgs.length - 1];
-    if (lastMsg && lastMsg.role === 'user') {
-      showTyping();
-      document.getElementById('queue-status').textContent = 'thinking…';
+    // Check if there's an active queue item (survives refresh reliably)
+    try {
+      const qs = await fetch('/api/queue-status').then(r => r.json());
+      if (qs.active) {
+        showTyping();
+        const q = document.getElementById('queue-status');
+        q.textContent = qs.position === 0 ? 'thinking…' : `#${qs.position + 1} in queue`;
+      }
+    } catch (_) {
+      // Fallback: heuristic
+      const lastMsg = msgs[msgs.length - 1];
+      if (lastMsg && lastMsg.role === 'user') {
+        showTyping();
+        document.getElementById('queue-status').textContent = 'thinking…';
+      }
     }
 
     // Restore panel from URL hash, or default to chat
@@ -1068,13 +1099,156 @@
     if (scroll) scrollToBottom();
   }
 
+  // ── Fun loading quips (shown after 10s of waiting) ──────────────
+  const loadingQuips = [
+    'reticulating splines…',
+    'consulting the ancient scrolls…',
+    'herding electrons…',
+    'negotiating with the cloud…',
+    'untangling spaghetti code…',
+    'feeding the hamsters…',
+    'calibrating flux capacitor…',
+    'parsing the ineffable…',
+    'aligning chakras…',
+    'compiling opinions…',
+    'defragmenting thoughts…',
+    'brewing a fresh pot of logic…',
+    'warming up the neural pathways…',
+    'asking the rubber duck…',
+    'polishing the pixels…',
+    'shaking the magic 8-ball…',
+    'consulting stack overflow…',
+    'summoning a senior dev…',
+    'reading the tea leaves…',
+    'rotating the dependency tree…',
+    'tuning the hyperparameters…',
+    'counting backwards from infinity…',
+    'looking for the any key…',
+    'converting caffeine to code…',
+    'rearranging the deck chairs…',
+    'searching for a missing semicolon…',
+    'waiting for the heat death of the universe…',
+    'contemplating the halting problem…',
+    'running on vibes and prayers…',
+    'spinning up the thinking hamster…',
+    'calculating the meaning of life…',
+    'checking if P equals NP…',
+    'poking the GPU gently…',
+    'rewriting it in rust…',
+    'asking claude to ask claude…',
+    'downloading more RAM…',
+    'applying percussive maintenance…',
+    'adjusting the seat mirrors…',
+    'turning it off and on again…',
+    'reading the error messages this time…',
+    'following the white rabbit…',
+    'refactoring the refactor…',
+    'deploying to production on a friday…',
+    'crossing the streams carefully…',
+    'dividing by almost-zero…',
+    'finding waldo in the logs…',
+    'teaching a robot to feel…',
+    'negotiating with merge conflicts…',
+    'building a bridge to the answer…',
+    'checking under the couch cushions…',
+    'translating from human to machine…',
+    'organizing the junk drawer…',
+    'alphabetizing the chaos…',
+    'asking the interns…',
+    'composing a symphony of bytes…',
+    'painting with ones and zeros…',
+    'solving for X, Y, and vibes…',
+    'looking both ways before crossing threads…',
+    'feeding tokens to the model…',
+    'performing interpretive dance for the compiler…',
+    'consulting the prophecy…',
+    'rolling for initiative…',
+    'casting detect thoughts…',
+    'entering the matrix…',
+    'grepping for enlightenment…',
+    'sudo make me a sandwich…',
+    'rm -rf doubts…',
+    'git blame-ing the universe…',
+    'docker pull wisdom…',
+    'npm install patience…',
+    'pip install --upgrade brain…',
+    'cat /dev/random | grep answer…',
+    'chmod +x solution…',
+    'ssh-ing into the void…',
+    'curling the answer from the ether…',
+    'tail -f consciousness…',
+    'awk-wardly processing…',
+    'sed-ucing the correct output…',
+    'echo "almost there"…',
+    'waking up the night shift neurons…',
+    'putting on thinking cap…',
+    'engaging warp drive…',
+    'initializing sarcasm module…',
+    'loading witty response…',
+    'buffering brilliance…',
+    'rendering thoughtfulness…',
+    'compressing wisdom…',
+    'decompressing genius…',
+    'indexing the internet…',
+    'querying the oracle…',
+    'paging doctor logic…',
+    'assembling the avengers…',
+    'triangulating the answer…',
+    'reverse engineering the question…',
+    'benchmarking creativity…',
+    'stress testing patience…',
+    'A/B testing reality…',
+    'caching the good vibes…',
+    'garbage collecting bad ideas…',
+    'hot-reloading personality…',
+    'migrating to a better thought…',
+    'scaling horizontally across dimensions…',
+  ];
+
+  let quipTimer = null;
+  let quipCycleTimer = null;
+  let quipStartTimer = null;
+  const quipEl = () => typingEl.querySelector('.typing-quip');
+
+  function startQuips() {
+    const el = quipEl();
+    if (!el) return;
+    // Shuffle a copy so it feels random each time
+    const shuffled = [...loadingQuips].sort(() => Math.random() - 0.5);
+    let idx = 0;
+    const show = () => {
+      el.textContent = shuffled[idx % shuffled.length];
+      el.classList.add('active');
+      // Re-trigger animation
+      el.style.animation = 'none';
+      el.offsetHeight; // reflow
+      el.style.animation = '';
+      idx++;
+    };
+    show();
+    quipCycleTimer = setInterval(show, 4000);
+  }
+
+  function stopQuips() {
+    const el = quipEl();
+    if (el) { el.classList.remove('active'); el.textContent = ''; }
+    clearTimeout(quipStartTimer);
+    clearInterval(quipCycleTimer);
+    quipStartTimer = null;
+    quipCycleTimer = null;
+  }
+
   function showTyping() {
     typingEl.classList.add('visible');
     scrollToBottom();
+    // Start fun quips after 10 seconds
+    stopQuips();
+    quipStartTimer = setTimeout(() => startQuips(), 10000);
   }
 
   function hideTyping() {
     typingEl.classList.remove('visible');
+    stopQuips();
   }
 
   async function sendMsg() {
@@ -1414,6 +1588,15 @@
           appendMsg('system', '↑ messages synced after reconnect', null, true);
         }
       }
+      // Restore typing indicator if agent is still working
+      try {
+        const qs = await fetch('/api/queue-status').then(r => r.json());
+        if (qs.active) {
+          showTyping();
+          const q = document.getElementById('queue-status');
+          q.textContent = qs.position === 0 ? 'thinking…' : `#${qs.position + 1} in queue`;
+        }
+      } catch (_) {}
     }
   });
 

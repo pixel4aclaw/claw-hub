@@ -155,6 +155,24 @@ app.post('/api/chat', async (req, res) => {
   res.json({ ok: true, queuePosition: position });
 });
 
+// ── Queue status (so frontend can restore indicator on refresh) ──────────────
+
+app.get('/api/queue-status', async (req, res) => {
+  await getDb();
+  const user = get('SELECT id FROM users WHERE username = ?', [req.user]);
+  if (!user) return res.json({ active: false });
+  const item = get(
+    "SELECT id, status FROM queue WHERE user_id = ? AND status IN ('pending','processing') ORDER BY id DESC LIMIT 1",
+    [user.id]
+  );
+  if (!item) return res.json({ active: false });
+  const position = (get(
+    "SELECT COUNT(*) as c FROM queue WHERE status IN ('pending','processing') AND id < ?",
+    [item.id]
+  ) || {}).c || 0;
+  res.json({ active: true, position });
+});
+
 // ── Mail (for Claw push messages and user relays) ────────────────────────────
 
 app.get('/api/mail', async (req, res) => {
