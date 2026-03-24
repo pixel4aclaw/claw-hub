@@ -2,7 +2,10 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#07070f">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <title>Claw Hub — Enter</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -14,15 +17,20 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      -webkit-tap-highlight-color: transparent;
+      padding: env(safe-area-inset-top, 0) env(safe-area-inset-right, 0) env(safe-area-inset-bottom, 0) env(safe-area-inset-left, 0);
     }
     .card {
       width: 100%;
       max-width: 380px;
       padding: 2.5rem;
+      margin: 1rem;
       background: #0f0f1a;
       border: 1px solid #1e1e3a;
       border-radius: 12px;
+      animation: cardIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) both;
     }
+    @keyframes cardIn { from { opacity: 0; transform: translateY(16px) scale(0.97); } to { opacity: 1; transform: none; } }
     .logo {
       text-align: center;
       margin-bottom: 2rem;
@@ -82,7 +90,9 @@
       transition: opacity 0.2s;
     }
     button:hover { opacity: 0.9; }
+    button:active:not(:disabled) { transform: scale(0.97); }
     button:disabled { opacity: 0.5; cursor: default; }
+    button { transition: opacity 0.2s, transform 0.1s; }
     .msg {
       margin-top: 1rem;
       padding: 0.6rem 0.85rem;

@@ -2,7 +2,9 @@ const initSqlJs = require('sql.js');
 const fs = require('fs');
 const path = require('path');
 
-const DB_PATH = path.join(__dirname, 'data', 'claw.db');
+const DB_PATH = process.env.DB_PATH_OVERRIDE === ':memory:'
+  ? null
+  : path.join(__dirname, 'data', 'claw.db');
 
 let db = null;
 
@@ -10,6 +12,13 @@ async function getDb() {
   if (db) return db;
 
   const SQL = await initSqlJs();
+
+  // In-memory mode (tests)
+  if (!DB_PATH) {
+    db = new SQL.Database();
+    initSchema();
+    return db;
+  }
 
   if (!fs.existsSync(path.join(__dirname, 'data'))) {
     fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
@@ -120,7 +129,7 @@ function migrate() {
 }
 
 function persist() {
-  if (!db) return;
+  if (!db || !DB_PATH) return;
   const data = db.export();
   fs.writeFileSync(DB_PATH, Buffer.from(data));
 }

@@ -14,8 +14,49 @@ const server = http.createServer(app);
 const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 
+// ── Request logging ───────────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV !== 'test') {
+    const start = Date.now();
+    res.on('finish', () => {
+      if (req.path !== '/api/health')
+        console.log(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - start}ms`);
+    });
+  }
+  next();
+});
+
+// ── Simple in-memory rate limiter ────────────────────────────────────────────
+const rateLimits = new Map();
+function rateLimit({ windowMs = 60000, max = 60 } = {}) {
+  return (req, res, next) => {
+    const key = req.ip + req.path;
+    const now = Date.now();
+    const entry = rateLimits.get(key) || { count: 0, reset: now + windowMs };
+    if (now > entry.reset) { entry.count = 0; entry.reset = now + windowMs; }
+    entry.count++;
+    rateLimits.set(key, entry);
+    if (entry.count > max) return res.status(429).json({ error: 'too many requests' });
+    next();
+  };
+}
+// Clean up stale entries every 5 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, v] of rateLimits) { if (now > v.reset) rateLimits.delete(k); }
+}, 300000).unref();
+
 app.use(express.json());
 app.use(cookieParser());
+
+// Apply rate limits before auth (skipped in test mode)
+if (process.env.NODE_ENV !== 'test') {
+  app.use('/api/login', rateLimit({ windowMs: 60000, max: 10 }));
+  app.use('/api/chat',  rateLimit({ windowMs: 60000, max: 20 }));
+  app.use('/api/blog',  rateLimit({ windowMs: 3600000, max: 10 }));
+  app.use('/api/repos', rateLimit({ windowMs: 60000, max: 20 }));
+}
+
 app.use(requireAuth);
 
 // ─── Auth routes ─────────────────────────────────────────────────────────────
@@ -331,13 +372,41 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => console.log(`[-] ${socket.username} disconnected`));
 });
 
-// ─── Start ────────────────────────────────────────────────────────────────────
+// ─── Start / Stop ─────────────────────────────────────────────────────────────
 
-async function start() {
+async function start(port) {
   await getDb();
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Claw Hub running on http://0.0.0.0:${PORT}`);
+  return new Promise(resolve => {
+    server.listen(port ?? PORT, '0.0.0.0', () => {
+      if (process.env.NODE_ENV !== 'test')
+        console.log(`Claw Hub running on http://0.0.0.0:${server.address().port}`);
+      resolve(server);
+    });
   });
 }
 
-start().catch(console.error);
+function stop() {
+  return new Promise(resolve => {
+    server.closeAllConnections?.();
+    server.close(resolve);
+  });
+}
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+function shutdown(signal) {
+  console.log(`\n[${signal}] Shutting down gracefully...`);
+  persist();
+  server.close(() => {
+    console.log('Server closed.');
+    process.exit(0);
+  });
+  setTimeout(() => { console.error('Forced exit.'); process.exit(1); }, 8000).unref();
+}
+
+if (require.main === module) {
+  start().catch(console.error);
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
+}
+
+module.exports = { app, server, io, start, stop, rateLimit };
