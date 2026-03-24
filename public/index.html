@@ -517,7 +517,7 @@
     .bar-fill.bat { background: linear-gradient(90deg, #16a34a, var(--green)); }
     .bar-val { font-size: 0.72rem; color: var(--muted); width: 40px; text-align: right; }
 
-    /* ── Repos panel ─────────────────────────────────────────────────── */
+    /* ── Projects panel ──────────────────────────────────────────────── */
     .repo-hint {
       background: var(--bg3);
       border: 1px solid var(--border);
@@ -895,7 +895,7 @@
         <span class="icon">📡</span><span>Status</span>
       </div>
       <div class="nav-item" data-panel="repos" onclick="showPanel('repos')">
-        <span class="icon">📦</span><span>Repos</span>
+        <span class="icon">📦</span><span>Projects</span>
       </div>
       <div class="nav-item" data-panel="blog" onclick="showPanel('blog')">
         <span class="icon">✍️</span><span>Blog</span>
@@ -920,7 +920,7 @@
     <div id="panel-container">
 
       <!-- Chat panel -->
-      <div class="panel" id="panel-chat" style="position:relative;">
+      <div class="panel" id="panel-chat">
         <div class="panel-header">
           <span class="status-dot" id="status-dot"></span>
           <h2>Claw</h2>
@@ -965,15 +965,15 @@
         </div>
       </div>
 
-      <!-- Repos panel -->
+      <!-- Projects panel -->
       <div class="panel" id="panel-repos">
         <div class="panel-header">
-          <h2>📦 Repos</h2>
+          <h2>📦 Projects</h2>
           <span class="sub" id="repo-count"></span>
         </div>
         <div class="panel-body">
           <div class="repo-hint">
-            Projects are <strong>auto-tracked</strong> here — every build gets a repo entry, whether it lives in this codebase or has its own URL.
+            Projects are <strong>auto-tracked</strong> here — every build gets an entry, whether it lives in this codebase or has its own URL.
           </div>
           <div class="repo-list" id="repo-list">
             <div class="skeleton-card"><div class="skeleton"></div><div class="skeleton short"></div></div>
@@ -1495,7 +1495,7 @@
           <div class="stat-card"><div class="label">Online Now</div><div class="value">${server.connections}</div></div>
           <div class="stat-card"><div class="label">Mail Sent</div><div class="value">${stats.mail || 0}</div></div>
           <div class="stat-card"><div class="label">Queue</div><div class="value">${stats.queue_pending || 0}</div><div class="sub-value">${stats.queue_done || 0} processed</div></div>
-          <div class="stat-card"><div class="label">Repos</div><div class="value">${stats.repos}</div></div>
+          <div class="stat-card"><div class="label">Projects</div><div class="value">${stats.repos}</div></div>
           <div class="stat-card"><div class="label">Blog Posts</div><div class="value">${stats.blog_posts}</div></div>
           <div class="stat-card"><div class="label">Server Up</div><div class="value" style="font-size:1rem">${fmt(server.uptime)}</div><div class="sub-value">PID ${server.pid || '—'}</div></div>
         </div>
@@ -1650,9 +1650,9 @@
 
   function renderRepos(repos) {
     const el = document.getElementById('repo-list');
-    document.getElementById('repo-count').textContent = `${repos.length} repo${repos.length !== 1 ? 's' : ''}`;
+    document.getElementById('repo-count').textContent = `${repos.length} project${repos.length !== 1 ? 's' : ''}`;
     if (!repos.length) {
-      el.innerHTML = '<div class="empty-state"><div class="icon">📦</div>No projects yet — build something and it\'ll show up here.</div>';
+      el.innerHTML = '<div class="empty-state"><div class="icon">📦</div>No projects yet — build something and it\'ll appear here.</div>';
       return;
     }
     el.innerHTML = repos.map(r => `
