@@ -7,7 +7,8 @@
     "test": "node --test test/e2e.js test/frontend.js",
     "test:api": "node --test test/e2e.js",
     "test:ui": "node --test test/frontend.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "prepare": "bash scripts/install-hooks.sh"
   },
   "keywords": [],
   "author": "",

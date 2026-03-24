@@ -1,0 +1,64 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# pre-commit hook — runs tests, blocks bad commits, spawns self-healing agent on failure
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+TEST_OUTPUT=$(npm test 2>&1)
+TEST_EXIT=$?
+
+if [ $TEST_EXIT -eq 0 ]; then
+  exit 0
+fi
+
+# ── Tests failed ───────────────────────────────────────────────────────────────
+
+TRUNCATED=$(echo "$TEST_OUTPUT" | tail -40)
+SETTINGS="$HOME/claudeclaw/.claude/claudeclaw/settings.json"
+
+# Notify via Telegram
+if [ -f "$SETTINGS" ]; then
+  BOT_TOKEN=$(python3 -c "import json; s=json.load(open('$SETTINGS')); print(s.get('telegram',{}).get('token',''))" 2>/dev/null || true)
+  CHAT_IDS=$(python3 -c "import json; s=json.load(open('$SETTINGS')); [print(i) for i in s.get('telegram',{}).get('allowedUserIds',[])]" 2>/dev/null || true)
+
+  if [ -n "$BOT_TOKEN" ]; then
+    PAYLOAD=$(python3 -c "
+import json, sys
+truncated = sys.argv[1]
+msg = 'Tests failed in openclaw-hub pre-commit hook. Self-healing agent spawned.\n\n' + truncated
+print(json.dumps(msg))
+" "$TRUNCATED" 2>/dev/null || true)
+
+    for CHAT_ID in $CHAT_IDS; do
+      curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+        -H "Content-Type: application/json" \
+        -d "{\"chat_id\": ${CHAT_ID}, \"text\": ${PAYLOAD}}" \
+        > /dev/null 2>&1 &
+    done
+  fi
+fi
+
+# Spawn self-healing agent in background
+LOG_DIR="$HOME/.claude/logs"
+mkdir -p "$LOG_DIR"
+LOG="$LOG_DIR/hook-fix-$(date +%s).log"
+
+CLAUDE_BIN="$(which claude 2>/dev/null || echo '')"
+if [ -n "$CLAUDE_BIN" ]; then
+  nohup "$CLAUDE_BIN" --dangerously-skip-permissions -p \
+    "Tests are failing in openclaw-hub. Run 'npm test' to see the failures, diagnose the root cause, and fix the code. Run tests again to confirm the fix. Do NOT commit — just fix the code so the developer can retry their commit." \
+    > "$LOG" 2>&1 &
+  echo "  Self-healing agent started (log: $LOG)"
+else
+  echo "  claude not in PATH — manual investigation needed"
+fi
+
+echo ""
+echo "❌ Pre-commit hook: tests failed. Commit blocked."
+echo "   Telegram notification sent. Fix the failures and retry."
+echo ""
+echo "$TEST_OUTPUT" | tail -20
+
+exit 1
