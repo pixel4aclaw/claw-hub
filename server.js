@@ -10,6 +10,7 @@ const v8 = require('v8');
 const { execSync } = require('child_process');
 const { getDb, all, get, insert, run, persist } = require('./db');
 const { requireAuth, setSession, getSession, clearSession, SITE_PASSWORD } = require('./auth');
+const { startWorker } = require('./worker');
 
 const app = express();
 const server = http.createServer(app);
@@ -555,6 +556,7 @@ async function start(port) {
     server.listen(port ?? PORT, '0.0.0.0', () => {
       if (process.env.NODE_ENV !== 'test')
         console.log(`Claw Hub running on http://0.0.0.0:${server.address().port}`);
+      startWorker(io);
       resolve(server);
     });
   });

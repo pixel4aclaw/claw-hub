@@ -852,6 +852,14 @@
     // Reposition typing indicator at end
     msgBox.appendChild(typingEl);
 
+    // If the last message is from the user, a response is still pending.
+    // Show the typing indicator immediately so users know on reload.
+    const lastMsg = msgs[msgs.length - 1];
+    if (lastMsg && lastMsg.role === 'user') {
+      showTyping();
+      document.getElementById('queue-status').textContent = 'thinking…';
+    }
+
     // Restore panel from URL hash, or default to chat
     const initialPanel = panelFromHash() || 'chat';
     // Seed history state so popstate fires correctly on back from this page
