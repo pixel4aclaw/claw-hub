@@ -10,7 +10,8 @@
  * Each user gets a persistent agent session — conversation context,
  * tool state, and memory carry across messages automatically.
  *
- * Pending messages for the same user are batched into a single agent call.
+ * Recent DB history is injected into each prompt so the agent always
+ * has conversation context, even from before the SDK migration.
  */
 
 const path = require('path');
@@ -34,6 +35,19 @@ async function callAgent(username, userId, userMessage) {
   const user = get('SELECT session_id FROM users WHERE id = ?', [userId]);
   const existingSessionId = user?.session_id;
 
+  // Fetch recent conversation history from DB so the agent has full context
+  // (covers messages from before the SDK migration and across session boundaries)
+  const history = all(
+    `SELECT role, content FROM messages WHERE user_id = ? ORDER BY id DESC LIMIT 50`,
+    [userId]
+  ).reverse();
+
+  let contextBlock = '';
+  if (history.length > 0) {
+    const lines = history.map(m => `[${m.role}]: ${m.content}`).join('\n\n');
+    contextBlock = `\n\nRecent conversation history with ${username}:\n---\n${lines}\n---`;
+  }
+
   const options = {
     model: 'opus',
     cwd: __dirname,
@@ -41,7 +55,7 @@ async function callAgent(username, userId, userMessage) {
     permissionMode: 'bypassPermissions',
     allowDangerouslySkipPermissions: true,
     maxTurns: 30,
-    systemPrompt: `${SYSTEM_PROMPT}\n\nYou're speaking with ${username}.`,
+    systemPrompt: `${SYSTEM_PROMPT}\n\nYou're speaking with ${username}.${contextBlock}`,
   };
 
   if (existingSessionId) {
