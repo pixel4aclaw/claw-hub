@@ -846,7 +846,6 @@
     if (msgs.length > 0) {
       document.getElementById('welcome')?.remove();
       msgs.forEach(m => appendMsg(m.role === 'user' ? 'user' : 'claw', m.content, m.created_at, false, true));
-      scrollToBottom(false);
     }
 
     // Reposition typing indicator at end
@@ -899,7 +898,7 @@
     if (name === 'status') loadStatus();
     if (name === 'repos')  loadRepos();
     if (name === 'blog')   { loadBlog(); newBlogSinceView = 0; updateBlogBadge(); }
-    if (name === 'chat')   document.getElementById('chat-input').focus();
+    if (name === 'chat')   { scrollToBottom(false); document.getElementById('chat-input').focus(); }
   }
 
   // showPanel: user-driven navigation — updates URL history
