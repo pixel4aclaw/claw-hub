@@ -162,7 +162,7 @@ app.get('/api/queue-status', async (req, res) => {
   const user = get('SELECT id FROM users WHERE username = ?', [req.user]);
   if (!user) return res.json({ active: false });
   const item = get(
-    "SELECT id, status FROM queue WHERE user_id = ? AND status IN ('pending','processing') ORDER BY id DESC LIMIT 1",
+    "SELECT id, status, created_at FROM queue WHERE user_id = ? AND status IN ('pending','processing') ORDER BY id DESC LIMIT 1",
     [user.id]
   );
   if (!item) return res.json({ active: false });
@@ -170,7 +170,7 @@ app.get('/api/queue-status', async (req, res) => {
     "SELECT COUNT(*) as c FROM queue WHERE status IN ('pending','processing') AND id < ?",
     [item.id]
   ) || {}).c || 0;
-  res.json({ active: true, position });
+  res.json({ active: true, position, created_at: item.created_at });
 });
 
 // ── Mail (for Claw push messages and user relays) ────────────────────────────

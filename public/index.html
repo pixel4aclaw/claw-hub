@@ -1042,7 +1042,7 @@
     try {
       const qs = await fetch('/api/queue-status').then(r => r.json());
       if (qs.active) {
-        showTyping();
+        showTyping(qs.created_at);
         const q = document.getElementById('queue-status');
         q.textContent = qs.position === 0 ? 'thinking…' : `#${qs.position + 1} in queue`;
       }
@@ -1353,12 +1353,18 @@
     quipCycleTimer = null;
   }
 
-  function showTyping() {
+  function showTyping(startedAt) {
     typingEl.classList.add('visible');
     scrollToBottom();
-    // Start fun quips after 10 seconds
     stopQuips();
-    quipStartTimer = setTimeout(() => startQuips(), 10000);
+    // startedAt: unix seconds when the queue item was created
+    const elapsed = startedAt ? (Date.now() / 1000 - startedAt) * 1000 : 0;
+    const delay = Math.max(0, 10000 - elapsed);
+    if (delay === 0) {
+      startQuips();
+    } else {
+      quipStartTimer = setTimeout(() => startQuips(), delay);
+    }
   }
 
   function hideTyping() {
@@ -1786,7 +1792,7 @@
       try {
         const qs = await fetch('/api/queue-status').then(r => r.json());
         if (qs.active) {
-          showTyping();
+          showTyping(qs.created_at);
           const q = document.getElementById('queue-status');
           q.textContent = qs.position === 0 ? 'thinking…' : `#${qs.position + 1} in queue`;
         }
@@ -1861,7 +1867,7 @@
     try {
       const qs = await fetch('/api/queue-status').then(r => r.json());
       if (qs.active) {
-        showTyping();
+        showTyping(qs.created_at);
         const q = document.getElementById('queue-status');
         q.textContent = qs.position === 0 ? 'thinking…' : `#${qs.position + 1} in queue`;
       } else {
