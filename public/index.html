@@ -289,10 +289,24 @@
     .msg.claw .md-body p { margin: 0.3rem 0; }
     .msg.claw .md-body p:first-child { margin-top: 0; }
     .msg.claw .md-body p:last-child { margin-bottom: 0; }
+    .msg.claw .md-body .code-block {
+      position: relative; margin: 0.4rem 0;
+    }
     .msg.claw .md-body pre {
       background: rgba(0,0,0,0.15); border-radius: 6px; padding: 0.5rem 0.7rem;
-      overflow-x: auto; font-size: 0.78rem; margin: 0.4rem 0;
+      overflow-x: auto; font-size: 0.78rem; margin: 0;
     }
+    .msg.claw .md-body .copy-btn {
+      position: absolute; top: 0.3rem; right: 0.3rem;
+      background: rgba(124,58,237,0.15); border: 1px solid rgba(124,58,237,0.3);
+      color: rgba(255,255,255,0.5); border-radius: 4px;
+      font-size: 0.65rem; padding: 0.15rem 0.4rem; cursor: pointer;
+      opacity: 0; transition: opacity 0.15s, color 0.15s, background 0.15s;
+      font-family: inherit; line-height: 1.4;
+    }
+    .msg.claw .md-body .code-block:hover .copy-btn { opacity: 1; }
+    .msg.claw .md-body .copy-btn:hover { background: rgba(124,58,237,0.3); color: rgba(255,255,255,0.85); }
+    .msg.claw .md-body .copy-btn.copied { color: #22c55e; border-color: rgba(34,197,94,0.4); background: rgba(34,197,94,0.1); }
     .msg.claw .md-body code {
       background: rgba(0,0,0,0.1); padding: 0.1rem 0.3rem;
       border-radius: 3px; font-size: 0.8rem;
@@ -1137,7 +1151,8 @@
           closeList();
           inCode = true; codeLang = line.slice(3).trim(); codeLines = [];
         } else {
-          html += `<pre><code>${esc(codeLines.join('\n'))}</code></pre>`;
+          const codeEsc = esc(codeLines.join('\n'));
+          html += `<div class="code-block"><button class="copy-btn" onclick="copyCode(this)">copy</button><pre><code>${codeEsc}</code></pre></div>`;
           inCode = false;
         }
         continue;
@@ -1174,7 +1189,7 @@
       closeList();
       html += `<p>${inline(esc(line))}</p>`;
     }
-    if (inCode) html += `<pre><code>${esc(codeLines.join('\n'))}</code></pre>`;
+    if (inCode) html += `<div class="code-block"><button class="copy-btn" onclick="copyCode(this)">copy</button><pre><code>${esc(codeLines.join('\n'))}</code></pre></div>`;
     closeList();
     return html;
   }
@@ -1184,6 +1199,15 @@
       .replace(/`([^`]+)`/g, '<code>$1</code>')
       .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
       .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+  }
+
+  function copyCode(btn) {
+    const code = btn.nextElementSibling.querySelector('code').textContent;
+    navigator.clipboard.writeText(code).then(() => {
+      btn.textContent = 'copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 2000);
+    });
   }
 
   // ── Chat ──────────────────────────────────────────────────────────
