@@ -458,6 +458,59 @@
     }
     .empty-state .icon { font-size: 2rem; margin-bottom: 0.5rem; }
 
+    /* ── Build panel ─────────────────────────────────────────────────── */
+    .build-hero {
+      text-align: center;
+      padding: 2rem 1.2rem 1.5rem;
+    }
+    .build-hero .icon { font-size: 2.5rem; margin-bottom: 0.6rem; }
+    .build-hero h2 {
+      font-size: 1.05rem; font-weight: 700; color: var(--text);
+      margin-bottom: 0.35rem;
+    }
+    .build-hero p {
+      font-size: 0.78rem; color: var(--muted); line-height: 1.5;
+      max-width: 320px; margin: 0 auto;
+    }
+    .build-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 0.65rem;
+      padding: 0 1.2rem 1.5rem;
+    }
+    .build-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1rem 1.1rem;
+      cursor: pointer;
+      transition: transform 0.15s, border-color 0.2s, background 0.2s;
+      touch-action: manipulation;
+      user-select: none;
+    }
+    .build-card:active { transform: scale(0.97); }
+    @media (hover: hover) { .build-card:hover { border-color: var(--border2); background: #10101c; } }
+    .build-card .build-icon {
+      font-size: 1.4rem;
+      margin-bottom: 0.5rem;
+    }
+    .build-card .build-label {
+      font-size: 0.85rem; font-weight: 600; color: var(--text);
+      margin-bottom: 0.25rem;
+    }
+    .build-card .build-desc {
+      font-size: 0.75rem; color: var(--muted); line-height: 1.45;
+      margin-bottom: 0.6rem;
+    }
+    .build-card .build-prompt-preview {
+      font-size: 0.7rem; color: #6366f1;
+      background: rgba(99,102,241,0.08);
+      border-radius: 6px;
+      padding: 0.4rem 0.6rem;
+      line-height: 1.4;
+      font-style: italic;
+    }
+
     /* ── Skeleton loading ────────────────────────────────────────────── */
     @keyframes shimmer {
       0% { background-position: -200% 0; }
@@ -593,6 +646,9 @@
       <div class="nav-item active" data-panel="chat" onclick="showPanel('chat')">
         <span class="icon">💬</span><span>Chat</span>
       </div>
+      <div class="nav-item" data-panel="build" onclick="showPanel('build')">
+        <span class="icon">🔨</span><span>Build</span>
+      </div>
       <div class="nav-section">Extras</div>
       <div class="nav-item" data-panel="status" onclick="showPanel('status')">
         <span class="icon">📡</span><span>Status</span>
@@ -692,6 +748,21 @@
         </div>
       </div>
 
+      <!-- Build panel -->
+      <div class="panel" id="panel-build">
+        <div class="panel-header">
+          <h2>🔨 Build</h2>
+        </div>
+        <div class="panel-body" style="padding:0; overflow-y:auto;">
+          <div class="build-hero">
+            <div class="icon">🔨</div>
+            <h2>What do you want to build today?</h2>
+            <p>Pick a starting point — Claw will take it from there. Each one pre-fills a prompt you can edit before sending.</p>
+          </div>
+          <div class="build-grid" id="build-grid"></div>
+        </div>
+      </div>
+
     </div><!-- /panel-container -->
   </div><!-- /main -->
 </div><!-- /app -->
@@ -705,7 +776,7 @@
   const msgBox = document.getElementById('messages');
   const typingEl = document.getElementById('typing-indicator');
 
-  const PANELS = ['chat', 'status', 'repos', 'blog'];
+  const PANELS = ['chat', 'build', 'status', 'repos', 'blog'];
   let currentPanelIdx = 0;
 
   // ── Init ──────────────────────────────────────────────────────────
@@ -732,9 +803,10 @@
 
     document.getElementById('chat-input').focus();
 
-    // Pre-load repos and blog in background
+    // Pre-load data in background
     loadRepos(true);
     loadBlog(true);
+    renderBuildCards();
   }
 
   // ── Panel navigation ──────────────────────────────────────────────
@@ -855,37 +927,74 @@
     if (!data) return;
 
     const fmt = s => {
-      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+      const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+      if (d > 0) return `${d}d ${h}h`;
       return h > 0 ? `${h}h ${m}m` : `${m}m`;
     };
+
+    const mb = n => n !== null && n !== undefined ? `${n} MB` : '—';
 
     document.getElementById('status-updated').textContent =
       'updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const { server, system, stats } = data;
+    const proc = data.process || {};
+    const heap = proc.heap || {};
+    const procMem = proc.memory || {};
+    const procIo = proc.io;
+    const disk = system.disk;
+    const net = system.network || [];
 
     document.getElementById('status-body').innerHTML = `
       <div class="stat-section">
-        <h3>Overview</h3>
+        <h3>Hub Stats</h3>
         <div class="stat-grid">
           <div class="stat-card"><div class="label">Users</div><div class="value">${stats.users}</div></div>
           <div class="stat-card"><div class="label">Messages</div><div class="value">${stats.messages}</div></div>
+          <div class="stat-card"><div class="label">Online Now</div><div class="value">${server.connections}</div></div>
+          <div class="stat-card"><div class="label">Mail Sent</div><div class="value">${stats.mail || 0}</div></div>
+          <div class="stat-card"><div class="label">Queue</div><div class="value">${stats.queue_pending || 0}</div><div class="sub-value">${stats.queue_done || 0} processed</div></div>
           <div class="stat-card"><div class="label">Repos</div><div class="value">${stats.repos}</div></div>
           <div class="stat-card"><div class="label">Blog Posts</div><div class="value">${stats.blog_posts}</div></div>
-          <div class="stat-card"><div class="label">Online Now</div><div class="value">${server.connections}</div></div>
-          <div class="stat-card"><div class="label">Server Up</div><div class="value" style="font-size:1rem">${fmt(server.uptime)}</div></div>
+          <div class="stat-card"><div class="label">Server Up</div><div class="value" style="font-size:1rem">${fmt(server.uptime)}</div><div class="sub-value">PID ${server.pid || '—'}</div></div>
         </div>
+      </div>
+
+      <div class="stat-section">
+        <h3>Node.js Process</h3>
+        <div class="stat-grid">
+          <div class="stat-card"><div class="label">RSS</div><div class="value" style="font-size:1rem">${mb(procMem.rss_mb)}</div><div class="sub-value">resident set</div></div>
+          <div class="stat-card"><div class="label">Heap Used</div><div class="value" style="font-size:1rem">${mb(procMem.heap_used_mb)}</div><div class="sub-value">of ${mb(procMem.heap_total_mb)} alloc</div></div>
+          <div class="stat-card"><div class="label">Heap Limit</div><div class="value" style="font-size:1rem">${heap.limit_mb || '—'} MB</div><div class="sub-value">${heap.pct || 0}% used</div></div>
+          <div class="stat-card"><div class="label">External</div><div class="value" style="font-size:1rem">${mb(procMem.external_mb)}</div><div class="sub-value">C++ objects</div></div>
+          <div class="stat-card"><div class="label">CPU Time</div><div class="value" style="font-size:1rem">${proc.cpu ? (proc.cpu.user_ms / 1000).toFixed(1) + 's' : '—'}</div><div class="sub-value">user / ${proc.cpu ? (proc.cpu.system_ms / 1000).toFixed(1) + 's' : '—'} sys</div></div>
+          <div class="stat-card"><div class="label">Open FDs</div><div class="value">${proc.open_fds || '—'}</div><div class="sub-value">file descriptors</div></div>
+        </div>
+        ${heap.pct !== undefined ? `
+        <div class="bar-row">
+          <span class="bar-label">V8 Heap</span>
+          <div class="bar-track"><div class="bar-fill mem" style="width:${heap.pct}%"></div></div>
+          <span class="bar-val">${heap.pct}%</span>
+        </div>` : ''}
+        ${procIo ? `
+        <div style="margin-top:0.6rem">
+          <div class="stat-grid">
+            <div class="stat-card"><div class="label">Disk Read</div><div class="value" style="font-size:1rem">${procIo.read_mb} MB</div><div class="sub-value">${(procIo.syscalls_r || 0).toLocaleString()} syscalls</div></div>
+            <div class="stat-card"><div class="label">Disk Write</div><div class="value" style="font-size:1rem">${procIo.write_mb} MB</div><div class="sub-value">${(procIo.syscalls_w || 0).toLocaleString()} syscalls</div></div>
+          </div>
+        </div>` : ''}
       </div>
 
       <div class="stat-section">
         <h3>System</h3>
         <div class="stat-grid">
           <div class="stat-card"><div class="label">Device Up</div><div class="value" style="font-size:1rem">${fmt(system.uptime)}</div></div>
+          <div class="stat-card"><div class="label">CPUs</div><div class="value">${system.cpus || '—'}</div><div class="sub-value">${system.arch}</div></div>
           <div class="stat-card"><div class="label">Load (1/5/15m)</div><div class="value" style="font-size:1rem">${system.load.join(' / ')}</div></div>
           <div class="stat-card">
-            <div class="label">Node.js</div>
+            <div class="label">Runtime</div>
             <div class="value" style="font-size:1rem">${server.node}</div>
-            <div class="sub-value">${system.arch} · ${system.platform}</div>
+            <div class="sub-value">${system.arch} · ${system.kernel ? system.kernel.split('-')[0] : server.platform}</div>
           </div>
         </div>
         <div class="bar-row">
@@ -894,8 +1003,17 @@
           <span class="bar-val">${system.memory.pct}%</span>
         </div>
         <div class="bar-row" style="font-size:0.7rem;color:var(--muted);margin-top:-0.2rem;margin-bottom:0.5rem;padding-left:68px">
-          ${system.memory.used_mb}MB / ${system.memory.total_mb}MB
+          ${system.memory.used_mb} MB / ${system.memory.total_mb} MB
         </div>
+        ${disk ? `
+        <div class="bar-row">
+          <span class="bar-label">Disk</span>
+          <div class="bar-track"><div class="bar-fill mem" style="width:${disk.pct}%"></div></div>
+          <span class="bar-val">${disk.pct}%</span>
+        </div>
+        <div class="bar-row" style="font-size:0.7rem;color:var(--muted);margin-top:-0.2rem;margin-bottom:0.5rem;padding-left:68px">
+          ${disk.used_gb} GB / ${disk.total_gb} GB
+        </div>` : ''}
         ${system.battery.capacity !== null ? `
         <div class="bar-row">
           <span class="bar-label">Battery</span>
@@ -912,6 +1030,14 @@
         <h3>Temperatures</h3>
         <div class="temp-bar">
           ${system.temps_c.map(t => `<span class="temp-pill ${t > 60 ? 'hot' : t > 45 ? 'warm' : ''}">${t}°C</span>`).join('')}
+        </div>
+      </div>` : ''}
+
+      ${net.length > 0 ? `
+      <div class="stat-section">
+        <h3>Network</h3>
+        <div class="stat-grid">
+          ${net.map(n => `<div class="stat-card"><div class="label">${esc(n.name)}</div><div class="value" style="font-size:0.85rem;font-family:monospace">${esc(n.address)}</div></div>`).join('')}
         </div>
       </div>` : ''}
     `;
@@ -1043,6 +1169,78 @@
       updateBlogBadge();
     }
   });
+
+  // ── Build panel ───────────────────────────────────────────────────
+  const BUILD_IDEAS = [
+    {
+      icon: '🌐',
+      label: 'Build a website',
+      desc: 'Create a project with its own page on the web, deployed through Claw Hub.',
+      prompt: 'Hey Claw, I want to build a personal portfolio site with a dark theme. It should have an about section, a list of projects, and a contact form. Can you create the repo and deploy it?',
+    },
+    {
+      icon: '⏰',
+      label: 'Something on a schedule',
+      desc: 'Set up an automated task that runs on a timer — daily reports, data fetches, reminders.',
+      prompt: 'Claw, can you set up a scheduled job that runs every morning at 8am and posts a motivational quote to my chat? Pick quotes from famous scientists and engineers.',
+    },
+    {
+      icon: '🛠️',
+      label: 'Improve Claw Hub',
+      desc: 'Suggest or build a new feature for this very app. Make it better for everyone.',
+      prompt: 'I have an idea for Claw Hub — can you add a feature where users can give each other kudos? Like a simple +1 that shows up in chat. Build it and deploy it.',
+    },
+    {
+      icon: '🤖',
+      label: 'Create a bot',
+      desc: 'Build a bot that monitors something, responds to events, or automates a workflow.',
+      prompt: 'Claw, build me a bot that watches a GitHub repo for new issues and posts a summary in my chat every time one is created. Use the GitHub API.',
+    },
+    {
+      icon: '🎮',
+      label: 'Make a game',
+      desc: 'A browser game — could be simple or ambitious. Claw will write the code.',
+      prompt: 'Hey Claw, I want to build a simple browser-based Snake game with a retro pixel art style. Host it as a page on Claw Hub so others can play it too.',
+    },
+    {
+      icon: '📊',
+      label: 'Data dashboard',
+      desc: 'Visualize something interesting — API data, stats, trends, or metrics.',
+      prompt: 'Claw, create a dashboard page that pulls weather data for San Francisco and shows a 5-day forecast with charts. Make it auto-refresh every hour.',
+    },
+    {
+      icon: '✨',
+      label: 'Surprise me',
+      desc: 'Let Claw pick something creative and build it. Trust the process.',
+      prompt: 'Surprise me, Claw. Build something creative and unexpected — a tool, a game, art, whatever inspires you. Make it good and deploy it so others can see.',
+    },
+  ];
+
+  function renderBuildCards() {
+    const grid = document.getElementById('build-grid');
+    grid.innerHTML = BUILD_IDEAS.map((idea, i) => `
+      <div class="build-card" onclick="pickBuild(${i})">
+        <div class="build-icon">${idea.icon}</div>
+        <div class="build-label">${esc(idea.label)}</div>
+        <div class="build-desc">${esc(idea.desc)}</div>
+        <div class="build-prompt-preview">"${esc(idea.prompt.slice(0, 80))}…"</div>
+      </div>
+    `).join('');
+  }
+
+  function pickBuild(idx) {
+    const idea = BUILD_IDEAS[idx];
+    haptic(15);
+    // Switch to chat panel
+    showPanel('chat');
+    // Pre-fill the prompt into the chat input
+    const input = document.getElementById('chat-input');
+    input.value = idea.prompt;
+    autoResize(input);
+    input.focus();
+    // Place cursor at end
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
 
   // ── Swipe gestures ────────────────────────────────────────────────
   (function initSwipe() {

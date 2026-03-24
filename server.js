@@ -6,6 +6,8 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const v8 = require('v8');
+const { execSync } = require('child_process');
 const { getDb, all, get, insert, run, persist } = require('./db');
 const { requireAuth, setSession, getSession, clearSession, SITE_PASSWORD } = require('./auth');
 
@@ -57,6 +59,11 @@ if (process.env.NODE_ENV !== 'test') {
   app.use('/api/repos', rateLimit({ windowMs: 60000, max: 20 }));
 }
 
+// Health check before auth so monitoring tools can reach it
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime(), connections: io.engine.clientsCount });
+});
+
 app.use(requireAuth);
 
 // ─── Auth routes ─────────────────────────────────────────────────────────────
@@ -100,10 +107,6 @@ app.post('/api/logout', (req, res) => {
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── API ─────────────────────────────────────────────────────────────────────
-
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', uptime: process.uptime(), connections: io.engine.clientsCount });
-});
 
 app.get('/api/me', async (req, res) => {
   await getDb();
@@ -228,6 +231,50 @@ function readSys(filePath, transform) {
   } catch { return null; }
 }
 
+function readProcSelfIo() {
+  try {
+    const raw = fs.readFileSync('/proc/self/io', 'utf8');
+    const obj = {};
+    for (const line of raw.split('\n')) {
+      const [k, v] = line.split(':').map(s => s.trim());
+      if (k && v) obj[k] = parseInt(v);
+    }
+    return obj;
+  } catch { return null; }
+}
+
+function getDiskUsage() {
+  try {
+    const out = execSync('df -k /data 2>/dev/null', { timeout: 3000 }).toString();
+    const lines = out.trim().split('\n');
+    if (lines.length < 2) return null;
+    const parts = lines[1].split(/\s+/);
+    return {
+      total_gb: Math.round(parseInt(parts[1]) / 1024 / 1024 * 10) / 10,
+      used_gb:  Math.round(parseInt(parts[2]) / 1024 / 1024 * 10) / 10,
+      free_gb:  Math.round(parseInt(parts[3]) / 1024 / 1024 * 10) / 10,
+      pct: parseInt(parts[4]),
+    };
+  } catch { return null; }
+}
+
+function getNetworkInfo() {
+  const ifaces = os.networkInterfaces();
+  const result = [];
+  for (const [name, addrs] of Object.entries(ifaces)) {
+    if (name === 'lo' || name === 'dummy0') continue;
+    const ipv4 = addrs.find(a => a.family === 'IPv4');
+    if (ipv4) result.push({ name, address: ipv4.address, internal: ipv4.internal });
+  }
+  return result;
+}
+
+function getOpenFds() {
+  try {
+    return fs.readdirSync('/proc/self/fd').length;
+  } catch { return null; }
+}
+
 app.get('/api/status', async (req, res) => {
   await getDb();
 
@@ -247,10 +294,31 @@ app.get('/api/status', async (req, res) => {
     status: readSys('/sys/class/power_supply/battery/status'),
   };
 
+  // V8 heap stats
+  const heap = v8.getHeapStatistics();
+  const procMem = process.memoryUsage();
+  const cpuUsage = process.cpuUsage();
+
+  // Process I/O
+  const procIo = readProcSelfIo();
+
+  // Disk
+  const disk = getDiskUsage();
+
+  // Network
+  const network = getNetworkInfo();
+
+  // Open file descriptors
+  const openFds = getOpenFds();
+
+  // DB stats
   const userCount = (get('SELECT COUNT(*) as c FROM users') || {}).c || 0;
   const msgCount  = (get('SELECT COUNT(*) as c FROM messages WHERE role = ?', ['user']) || {}).c || 0;
   const repoCount = (get('SELECT COUNT(*) as c FROM repos') || {}).c || 0;
   const postCount = (get('SELECT COUNT(*) as c FROM blog_posts') || {}).c || 0;
+  const queuePending = (get("SELECT COUNT(*) as c FROM queue WHERE status IN ('pending','processing')") || {}).c || 0;
+  const queueDone = (get("SELECT COUNT(*) as c FROM queue WHERE status = 'done'") || {}).c || 0;
+  const mailCount = (get('SELECT COUNT(*) as c FROM mail') || {}).c || 0;
 
   res.json({
     server: {
@@ -258,11 +326,40 @@ app.get('/api/status', async (req, res) => {
       connections: io.engine.clientsCount,
       node: process.version,
       platform: os.platform(),
+      pid: process.pid,
+    },
+    process: {
+      memory: {
+        rss_mb: Math.round(procMem.rss / 1024 / 1024 * 10) / 10,
+        heap_used_mb: Math.round(procMem.heapUsed / 1024 / 1024 * 10) / 10,
+        heap_total_mb: Math.round(procMem.heapTotal / 1024 / 1024 * 10) / 10,
+        external_mb: Math.round(procMem.external / 1024 / 1024 * 10) / 10,
+      },
+      heap: {
+        used_mb: Math.round(heap.used_heap_size / 1024 / 1024 * 10) / 10,
+        limit_mb: Math.round(heap.heap_size_limit / 1024 / 1024),
+        pct: Math.round((heap.used_heap_size / heap.heap_size_limit) * 100),
+        native_contexts: heap.number_of_native_contexts,
+        detached_contexts: heap.number_of_detached_contexts,
+      },
+      cpu: {
+        user_ms: Math.round(cpuUsage.user / 1000),
+        system_ms: Math.round(cpuUsage.system / 1000),
+      },
+      io: procIo ? {
+        read_mb: Math.round(procIo.read_bytes / 1024 / 1024 * 10) / 10,
+        write_mb: Math.round(procIo.write_bytes / 1024 / 1024 * 10) / 10,
+        syscalls_r: procIo.syscr,
+        syscalls_w: procIo.syscw,
+      } : null,
+      open_fds: openFds,
     },
     system: {
       hostname: os.hostname(),
       arch: os.arch(),
+      kernel: os.release(),
       uptime: Math.floor(os.uptime()),
+      cpus: os.availableParallelism?.() || os.cpus().length || null,
       load: os.loadavg().map(l => Math.round(l * 100) / 100),
       memory: {
         total_mb: Math.round(totalMem / 1024 / 1024),
@@ -270,10 +367,20 @@ app.get('/api/status', async (req, res) => {
         free_mb: Math.round(freeMem / 1024 / 1024),
         pct: Math.round((usedMem / totalMem) * 100),
       },
+      disk,
+      network,
       temps_c: temps,
       battery,
     },
-    stats: { users: userCount, messages: msgCount, repos: repoCount, blog_posts: postCount },
+    stats: {
+      users: userCount,
+      messages: msgCount,
+      repos: repoCount,
+      blog_posts: postCount,
+      mail: mailCount,
+      queue_pending: queuePending,
+      queue_done: queueDone,
+    },
   });
 });
 
