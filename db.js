@@ -11,12 +11,10 @@ async function getDb() {
 
   const SQL = await initSqlJs();
 
-  // Ensure data dir exists
   if (!fs.existsSync(path.join(__dirname, 'data'))) {
     fs.mkdirSync(path.join(__dirname, 'data'), { recursive: true });
   }
 
-  // Load existing DB or create new
   if (fs.existsSync(DB_PATH)) {
     const fileBuffer = fs.readFileSync(DB_PATH);
     db = new SQL.Database(fileBuffer);
@@ -35,26 +33,7 @@ function initSchema() {
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL COLLATE NOCASE,
-      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-      building_type TEXT,
-      building_description TEXT,
-      building_page_html TEXT,
-      onboarded INTEGER NOT NULL DEFAULT 0
-    );
-
-    CREATE TABLE IF NOT EXISTS buildings (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id INTEGER NOT NULL REFERENCES users(id),
-      name TEXT NOT NULL,
-      type TEXT,
-      description TEXT,
-      x REAL DEFAULT 0,
-      y REAL DEFAULT 0,
-      width REAL DEFAULT 120,
-      height REAL DEFAULT 100,
-      page_html TEXT,
-      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-      updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     );
 
     CREATE TABLE IF NOT EXISTS messages (
@@ -75,12 +54,6 @@ function initSchema() {
       completed_at INTEGER
     );
 
-    CREATE TABLE IF NOT EXISTS town_state (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-    );
-
     CREATE TABLE IF NOT EXISTS mail (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       from_user_id INTEGER REFERENCES users(id),
@@ -92,14 +65,9 @@ function initSchema() {
       created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     );
   `);
-
-  // Seed town hall
-  db.run(`INSERT OR IGNORE INTO town_state (key, value) VALUES ('town_name', '"Claw Town"')`);
-  db.run(`INSERT OR IGNORE INTO town_state (key, value) VALUES ('town_rules', '[]')`);
-  db.run(`INSERT OR IGNORE INTO town_state (key, value) VALUES ('town_hall_pos', '{"x":0,"y":0}')`);
 }
 
-// Run migrations for existing DBs
+// Migrations for existing DBs
 function migrate() {
   try {
     db.run(`CREATE TABLE IF NOT EXISTS mail (
@@ -118,21 +86,18 @@ function migrate() {
   }
 }
 
-// Write DB to disk
 function persist() {
   if (!db) return;
   const data = db.export();
   fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
 
-// Helper: run a write + persist
 function run(sql, params = []) {
-  getDb(); // ensure loaded (sync check)
+  getDb();
   db.run(sql, params);
   persist();
 }
 
-// Helper: query rows as objects
 function all(sql, params = []) {
   const stmt = db.prepare(sql);
   stmt.bind(params);
@@ -144,13 +109,11 @@ function all(sql, params = []) {
   return rows;
 }
 
-// Helper: get single row
 function get(sql, params = []) {
   const rows = all(sql, params);
   return rows[0] || null;
 }
 
-// Helper: get last insert rowid
 function insert(sql, params = []) {
   db.run(sql, params);
   const result = all('SELECT last_insert_rowid() as id');
