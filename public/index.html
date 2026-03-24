@@ -281,9 +281,9 @@
     }
     .msg .ts {
       display: block; font-size: 0.62rem; margin-top: 0.3rem;
-      color: #2a2a40;
+      color: rgba(255,255,255,0.45);
     }
-    .msg.user .ts { text-align: right; }
+    .msg.user .ts { text-align: right; color: rgba(255,255,255,0.55); }
     /* Markdown in claw messages */
     .msg.claw .md-body p { margin: 0.3rem 0; }
     .msg.claw .md-body p:first-child { margin-top: 0; }
@@ -345,7 +345,7 @@
     .typing-quip {
       display: none;
       font-size: 0.72rem;
-      color: var(--muted);
+      color: rgba(255,255,255,0.5);
       font-style: italic;
       line-height: 1.3;
       animation: quipFade 0.4s ease both;
