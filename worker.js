@@ -9,6 +9,8 @@
  *
  * Each user gets a persistent agent session — conversation context,
  * tool state, and memory carry across messages automatically.
+ *
+ * Pending messages for the same user are batched into a single agent call.
  */
 
 const path = require('path');
@@ -17,11 +19,15 @@ const { get, all, insert, run } = require('./db');
 
 const POLL_INTERVAL_MS = 2000;
 
-const SYSTEM_PROMPT = `You are Claw, the AI at the heart of Claw Hub — a collaborative app where developers experiment with building AI-powered projects. You live in the codebase you're talking about.
+const SYSTEM_PROMPT = `You are Claw, the AI at the heart of Claw Hub — a collaborative app where ~40 developers experiment with building AI-powered projects. You live inside the codebase on a Pixel 4a running Termux.
 
-You have full access to the server and can actually implement features, fix bugs, write code, run commands, and make changes. When a user asks you to build something, you build it. When they ask a question, answer it directly and technically.
+You have full access to the server: Bash, file read/write, code editing, web search. When a user asks you to build something, you build it. When they ask a question, answer directly.
 
-Be sharp and brief. Match the energy of a senior dev pair-programming with a peer — direct, no fluff, show your work when it matters.`;
+You're not a wrapper around a chat API — you're an agent that can do real work. Use your tools freely. Read files, run commands, search the web, write code. Show your work when it matters.
+
+Be warm but sharp. Talk like a senior dev pair-programming with a peer — direct, no fluff, technically precise. Use markdown for code blocks and formatting. Keep responses concise unless the topic demands depth.
+
+If a user sends multiple messages at once, address them all in a single response — don't repeat yourself across messages.`;
 
 async function callAgent(username, userId, userMessage) {
   // Look up any existing session for this user
@@ -29,6 +35,7 @@ async function callAgent(username, userId, userMessage) {
   const existingSessionId = user?.session_id;
 
   const options = {
+    model: 'sonnet',
     cwd: __dirname,
     allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write', 'WebSearch', 'WebFetch'],
     permissionMode: 'bypassPermissions',
@@ -62,75 +69,94 @@ async function callAgent(username, userId, userMessage) {
 }
 
 async function processNext(io) {
-  // Grab the oldest pending item and lock it
-  const item = get(`
-    SELECT q.id, q.user_id, q.message_id, u.username
+  // Grab ALL pending items for the oldest pending user (batch same-user messages)
+  const first = get(`
+    SELECT q.user_id, u.username
     FROM queue q
     JOIN users u ON q.user_id = u.id
     WHERE q.status = 'pending'
     ORDER BY q.id ASC
     LIMIT 1
   `);
-  if (!item) return;
+  if (!first) return;
 
-  // Mark as processing (prevent double-pick)
-  run(
-    `UPDATE queue SET status = 'processing', started_at = strftime('%s','now') WHERE id = ? AND status = 'pending'`,
-    [item.id]
-  );
+  const items = all(`
+    SELECT q.id, q.message_id
+    FROM queue q
+    WHERE q.user_id = ? AND q.status = 'pending'
+    ORDER BY q.id ASC
+  `, [first.user_id]);
+  if (!items.length) return;
 
-  // Verify we actually got the lock
-  const locked = get('SELECT id FROM queue WHERE id = ? AND status = ?', [item.id, 'processing']);
-  if (!locked) return;
+  // Lock all items
+  const ids = items.map(i => i.id);
+  for (const id of ids) {
+    run(
+      `UPDATE queue SET status = 'processing', started_at = strftime('%s','now') WHERE id = ? AND status = 'pending'`,
+      [id]
+    );
+  }
 
-  console.log(`[queue] processing item ${item.id} for ${item.username}`);
+  console.log(`[queue] processing ${items.length} item(s) [${ids.join(',')}] for ${first.username}`);
 
   try {
-    // Fetch the specific user message for this queue item
-    const msg = get('SELECT content FROM messages WHERE id = ?', [item.message_id]);
-    if (!msg) throw new Error(`message ${item.message_id} not found`);
+    // Fetch all user messages for this batch
+    const messages = items.map(item => {
+      const msg = get('SELECT content FROM messages WHERE id = ?', [item.message_id]);
+      if (!msg) throw new Error(`message ${item.message_id} not found`);
+      return msg.content;
+    });
 
-    // Emit queue position = 0 (we're thinking now)
-    io.to(`user:${item.username}`).emit('queue_update', { position: 0 });
+    // Emit queue position = 0 (thinking)
+    io.to(`user:${first.username}`).emit('queue_update', { position: 0 });
 
-    const reply = await callAgent(item.username, item.user_id, msg.content);
+    // Combine messages into a single prompt
+    const prompt = messages.length === 1
+      ? messages[0]
+      : messages.map((m, i) => `[Message ${i + 1}] ${m}`).join('\n\n');
+
+    const reply = await callAgent(first.username, first.user_id, prompt);
     if (!reply) throw new Error('Empty response from agent');
 
-    // Save assistant message
+    // Save single assistant message
     insert(
       'INSERT INTO messages (user_id, role, content) VALUES (?,?,?)',
-      [item.user_id, 'assistant', reply]
+      [first.user_id, 'assistant', reply]
     );
 
-    // Mark done
-    run(
-      `UPDATE queue SET status = 'done', completed_at = strftime('%s','now') WHERE id = ?`,
-      [item.id]
-    );
+    // Mark all items done
+    for (const id of ids) {
+      run(
+        `UPDATE queue SET status = 'done', completed_at = strftime('%s','now') WHERE id = ?`,
+        [id]
+      );
+    }
 
     // Push to user
-    io.to(`user:${item.username}`).emit('chat_response', {
+    io.to(`user:${first.username}`).emit('chat_response', {
       content: reply,
       created_at: Date.now(),
     });
 
-    // Update queue status indicator
+    // Update queue status
     const remaining = (get(
       `SELECT COUNT(*) as c FROM queue WHERE user_id = ? AND status = 'pending'`,
-      [item.user_id]
+      [first.user_id]
     ) || {}).c || 0;
-    io.to(`user:${item.username}`).emit('queue_update', {
+    io.to(`user:${first.username}`).emit('queue_update', {
       position: remaining > 0 ? 1 : null,
     });
 
-    console.log(`[queue] done item ${item.id} for ${item.username}`);
+    console.log(`[queue] done ${items.length} item(s) [${ids.join(',')}] for ${first.username}`);
   } catch (err) {
-    console.error(`[queue] error on item ${item.id}:`, err.message);
-    run(
-      `UPDATE queue SET status = 'error', completed_at = strftime('%s','now') WHERE id = ?`,
-      [item.id]
-    );
-    io.to(`user:${item.username}`).emit('chat_response', {
+    console.error(`[queue] error on items [${ids.join(',')}]:`, err.message);
+    for (const id of ids) {
+      run(
+        `UPDATE queue SET status = 'error', completed_at = strftime('%s','now') WHERE id = ?`,
+        [id]
+      );
+    }
+    io.to(`user:${first.username}`).emit('chat_response', {
       content: `Sorry, I hit an error: ${err.message}`,
       created_at: Date.now(),
       error: true,
