@@ -151,18 +151,27 @@
     .panel {
       position: absolute;
       inset: 0;
-      display: flex;
+      display: none;
       flex-direction: column;
       background: var(--bg);
-      transform: translateX(100%);
-      transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
-      will-change: transform;
     }
     .panel.active {
-      transform: translateX(0);
+      display: flex;
     }
-    .panel.slide-left {
-      transform: translateX(-30%);
+    /* Entrance animations driven by direction class set in JS */
+    .panel.active.from-right {
+      animation: slideInRight 0.26s cubic-bezier(0.4, 0, 0.2, 1) both;
+    }
+    .panel.active.from-left {
+      animation: slideInLeft 0.26s cubic-bezier(0.4, 0, 0.2, 1) both;
+    }
+    @keyframes slideInRight {
+      from { transform: translateX(40px); opacity: 0; }
+      to   { transform: translateX(0);    opacity: 1; }
+    }
+    @keyframes slideInLeft {
+      from { transform: translateX(-40px); opacity: 0; }
+      to   { transform: translateX(0);     opacity: 1; }
     }
 
     /* ── Panel header ────────────────────────────────────────────────── */
@@ -657,8 +666,6 @@
         -webkit-text-fill-color: transparent;
       }
 
-      /* Disable swipe panel nav transition since panels slide */
-      .panel { transition: transform 0.26s cubic-bezier(0.4, 0, 0.2, 1); }
     }
 
     @media (min-width: 601px) {
@@ -855,30 +862,21 @@
     if (nextIdx === currIdx) return;
 
     haptic(6);
-
-    const curr = document.getElementById(`panel-${PANELS[currIdx]}`);
-    const next = document.getElementById(`panel-${name}`);
-
-    // Slide current panel out
-    curr.classList.remove('active');
-    curr.classList.add(nextIdx > currIdx ? 'slide-left' : '');
-    if (nextIdx < currIdx) curr.style.transform = 'translateX(100%)';
-
-    // Slide next panel in from the right or left
-    next.style.transform = nextIdx > currIdx ? 'translateX(100%)' : 'translateX(-30%)';
-    next.style.transition = 'none';
-    // Force reflow
-    next.getBoundingClientRect();
-    next.style.transition = '';
-    next.classList.add('active');
-
-    // Clean up old panel after transition
-    setTimeout(() => {
-      curr.style.transform = '';
-      curr.classList.remove('slide-left');
-    }, 300);
-
     currentPanelIdx = nextIdx;
+
+    const goingRight = nextIdx > currIdx;
+
+    // Deactivate all panels
+    document.querySelectorAll('.panel').forEach(p => {
+      p.classList.remove('active', 'from-right', 'from-left');
+    });
+
+    // Activate target panel with directional entrance animation
+    const next = document.getElementById(`panel-${name}`);
+    next.classList.add('active', goingRight ? 'from-right' : 'from-left');
+
+    // Clean up animation class after it finishes so it can re-trigger
+    setTimeout(() => next.classList.remove('from-right', 'from-left'), 300);
 
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     document.querySelector(`[data-panel="${name}"]`).classList.add('active');
