@@ -19,6 +19,8 @@ const { query } = require('@anthropic-ai/claude-agent-sdk');
 const { get, all, insert, run } = require('./db');
 
 const POLL_INTERVAL_MS = 2000;
+const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const STALE_THRESHOLD_S = 300; // 5 minutes in seconds
 
 const SYSTEM_PROMPT = `You are Claw, the AI at the heart of Claw Hub — a collaborative app where ~40 developers experiment with building AI-powered projects. You live inside the codebase on a Pixel 4a running Termux.
 
@@ -110,7 +112,12 @@ async function processNext(io) {
 
     io.to(`user:${item.username}`).emit('queue_update', { position: 0 });
 
-    const reply = await callAgent(item.username, item.user_id, msg.content);
+    const reply = await Promise.race([
+      callAgent(item.username, item.user_id, msg.content),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Agent timed out after 5 minutes')), AGENT_TIMEOUT_MS)
+      ),
+    ]);
     if (!reply) throw new Error('Empty response from agent');
 
     insert(
@@ -153,6 +160,18 @@ async function processNext(io) {
 
 function startWorker(io) {
   if (process.env.NODE_ENV === 'test') return;
+
+  // Reclaim items stuck in 'processing' from a previous crash/restart
+  const stale = all(
+    `SELECT q.id, u.username FROM queue q JOIN users u ON q.user_id = u.id
+     WHERE q.status = 'processing' AND (strftime('%s','now') - q.started_at) > ?`,
+    [STALE_THRESHOLD_S]
+  );
+  for (const s of stale) {
+    run("UPDATE queue SET status = 'pending', started_at = NULL WHERE id = ?", [s.id]);
+    console.log(`[queue] reclaimed stale item ${s.id} for ${s.username}`);
+  }
+  if (stale.length) console.log(`[queue] reclaimed ${stale.length} stale item(s)`);
 
   console.log(`[queue] worker started, polling every ${POLL_INTERVAL_MS}ms`);
 
