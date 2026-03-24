@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Town Hall — Claw Hub</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      background: #0a0a0a;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    /* ── Top bar ── */
+    #topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 1.5rem;
+      background: rgba(8,8,8,0.95);
+      border-bottom: 1px solid #111;
+    }
+    .back-btn {
+      font-family: inherit;
+      font-size: 0.75rem;
+      color: #555;
+      background: none;
+      border: 1px solid #1a1a1a;
+      border-radius: 4px;
+      padding: 0.25rem 0.6rem;
+      cursor: pointer;
+      transition: color 0.15s, border-color 0.15s;
+      text-decoration: none;
+      display: inline-block;
+    }
+    .back-btn:hover { color: #aaa; border-color: #333; }
+    .topbar-title {
+      font-size: 0.9rem;
+      font-weight: bold;
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      letter-spacing: 0.08em;
+    }
+    #topbar-user {
+      margin-left: auto;
+      font-size: 0.75rem;
+      color: #444;
+    }
+
+    /* ── Page layout ── */
+    .page {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    /* ── Hero ── */
+    .hero {
+      text-align: center;
+      margin-bottom: 3rem;
+      padding: 2.5rem 1rem;
+      position: relative;
+    }
+    .hero-icon { font-size: 4rem; display: block; margin-bottom: 1rem; }
+    .hero h1 {
+      font-size: 1.8rem;
+      letter-spacing: 0.08em;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero-sub { font-size: 0.8rem; color: #555; line-height: 1.6; max-width: 400px; margin: 0 auto; }
+
+    /* ── Stats row ── */
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1rem;
+      margin-bottom: 2.5rem;
+    }
+    .stat-card {
+      background: #0d0d0d;
+      border: 1px solid #1a1a1a;
+      border-radius: 8px;
+      padding: 1.25rem;
+      text-align: center;
+    }
+    .stat-number {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #f59e0b;
+      line-height: 1;
+      margin-bottom: 0.35rem;
+    }
+    .stat-label { font-size: 0.68rem; color: #444; letter-spacing: 0.08em; }
+
+    /* ── Section ── */
+    .section { margin-bottom: 2.5rem; }
+    .section-title {
+      font-size: 0.72rem;
+      color: #444;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      margin-bottom: 1rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid #111;
+    }
+
+    /* ── Residents grid ── */
+    .residents {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 0.75rem;
+    }
+    .resident-card {
+      background: #0d0d0d;
+      border: 1px solid #1a1a1a;
+      border-radius: 8px;
+      padding: 1rem;
+      text-align: center;
+      cursor: pointer;
+      text-decoration: none;
+      display: block;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .resident-card:hover { border-color: #2a2a2a; transform: translateY(-2px); }
+    .resident-emoji { font-size: 1.8rem; display: block; margin-bottom: 0.4rem; }
+    .resident-name { font-size: 0.72rem; color: #aaa; display: block; margin-bottom: 0.2rem; }
+    .resident-type { font-size: 0.62rem; color: #444; }
+
+    /* ── Rules ── */
+    .rules-list { list-style: none; }
+    .rules-list li {
+      padding: 0.6rem 0;
+      border-bottom: 1px solid #0f0f0f;
+      font-size: 0.82rem;
+      color: #777;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+    .rules-list li:last-child { border-bottom: none; }
+    .rules-list li::before { content: '—'; color: #333; flex-shrink: 0; }
+    .rules-empty { font-size: 0.8rem; color: #333; font-style: italic; }
+
+    /* ── Activity feed ── */
+    .activity-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      padding: 0.6rem 0;
+      border-bottom: 1px solid #0f0f0f;
+      font-size: 0.78rem;
+    }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-icon { font-size: 1rem; flex-shrink: 0; margin-top: 0.1rem; }
+    .activity-text { color: #666; line-height: 1.4; }
+    .activity-text strong { color: #999; }
+    .activity-time { margin-left: auto; font-size: 0.65rem; color: #333; flex-shrink: 0; }
+
+    /* ── Online indicators ── */
+    .online-dot {
+      display: inline-block;
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #22c55e;
+      margin-right: 4px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+    /* ── Chat button (floating) ── */
+    #chat-btn {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      z-index: 200;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #7c3aed, #3b82f6);
+      border: none;
+      cursor: pointer;
+      font-size: 1.3rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 20px rgba(124,58,237,0.45);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    #chat-btn:hover { transform: scale(1.08); box-shadow: 0 4px 28px rgba(124,58,237,0.65); }
+
+    #chat-panel {
+      position: fixed;
+      bottom: 5.2rem;
+      right: 1.5rem;
+      width: 360px;
+      max-height: 60vh;
+      z-index: 200;
+      background: #0f0f0f;
+      border: 1px solid #1e1e1e;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.7);
+      transform: scale(0.95) translateY(8px);
+      opacity: 0;
+      pointer-events: none;
+      transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+    #chat-panel.open { transform: scale(1) translateY(0); opacity: 1; pointer-events: all; }
+    .chat-header { padding: 0.65rem 1rem; border-bottom: 1px solid #181818; font-size: 0.75rem; color: #555; display: flex; align-items: center; gap: 0.5rem; }
+    .chat-header .pulse { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; animation: pulse 2s infinite; }
+    #chat-msgs { flex: 1; overflow-y: auto; padding: 0.75rem; display: flex; flex-direction: column; gap: 0.45rem; min-height: 180px; }
+    #chat-msgs::-webkit-scrollbar { width: 3px; }
+    #chat-msgs::-webkit-scrollbar-thumb { background: #222; }
+    .msg { max-width: 88%; padding: 0.45rem 0.7rem; border-radius: 8px; font-size: 0.78rem; line-height: 1.45; word-break: break-word; }
+    .msg.user { align-self: flex-end; background: #1a1730; border: 1px solid #2d2460; color: #c4b5fd; }
+    .msg.claw { align-self: flex-start; background: #101a10; border: 1px solid #1a3020; color: #86efac; }
+    .msg.system { align-self: center; background: none; border: none; color: #333; font-size: 0.68rem; padding: 0.2rem 0; }
+    #chat-queue { padding: 0.25rem 1rem; font-size: 0.68rem; color: #444; border-top: 1px solid #151515; min-height: 1.4rem; }
+    .chat-input-row { display: flex; gap: 0.5rem; padding: 0.65rem; border-top: 1px solid #151515; }
+    #chat-input { flex: 1; background: #0a0a0a; border: 1px solid #1e1e1e; border-radius: 6px; padding: 0.45rem 0.65rem; color: #e0e0e0; font-family: inherit; font-size: 0.78rem; outline: none; resize: none; }
+    #chat-input:focus { border-color: #2d2460; }
+    #chat-send { background: #7c3aed; color: white; border: none; border-radius: 6px; padding: 0 0.7rem; cursor: pointer; font-family: inherit; font-size: 0.78rem; }
+    #chat-send:hover { background: #6d28d9; }
+  </style>
+</head>
+<body>
+
+  <div id="topbar">
+    <a href="/" class="back-btn">← map</a>
+    <span class="topbar-title">🏛️ TOWN HALL</span>
+    <span id="topbar-user"></span>
+  </div>
+
+  <div class="page">
+
+    <div class="hero">
+      <span class="hero-icon">🏛️</span>
+      <h1 id="town-name">Claw Town</h1>
+      <p class="hero-sub" id="town-sub">A living experiment. Built by Claw and its residents.</p>
+    </div>
+
+    <div class="stats">
+      <div class="stat-card">
+        <div class="stat-number" id="stat-residents">—</div>
+        <div class="stat-label">RESIDENTS</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-online">—</div>
+        <div class="stat-label">ONLINE NOW</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-number" id="stat-buildings">—</div>
+        <div class="stat-label">BUILDINGS</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">residents</div>
+      <div class="residents" id="residents-grid">
+        <div style="color:#333;font-size:0.8rem;">loading...</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">town rules</div>
+      <ul class="rules-list" id="rules-list">
+        <li style="list-style:none;color:#333;font-size:0.8rem;border:none;">loading...</li>
+      </ul>
+    </div>
+
+    <div class="section">
+      <div class="section-title">recent activity</div>
+      <div id="activity-feed">
+        <div class="activity-item">
+          <span class="activity-icon">🏛️</span>
+          <span class="activity-text">Town Hall is open for business.</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <button id="chat-btn" onclick="toggleChat()">✦</button>
+
+  <div id="chat-panel">
+    <div class="chat-header">
+      <span class="pulse"></span>
+      <span>Claw</span>
+    </div>
+    <div id="chat-msgs">
+      <div class="msg system">your conversation with claw</div>
+    </div>
+    <div id="chat-queue"></div>
+    <div class="chat-input-row">
+      <textarea id="chat-input" rows="1" placeholder="say something..."
+                onkeydown="chatKey(event)"></textarea>
+      <button id="chat-send" onclick="sendMsg()">send</button>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    let me = null;
+    let chatOpen = false;
+
+    async function init() {
+      const [meData, townData] = await Promise.all([
+        fetch('/api/me').then(r => r.json()),
+        fetch('/api/town').then(r => r.json()),
+      ]);
+
+      me = meData;
+      document.getElementById('topbar-user').textContent = '✦ ' + me.username;
+
+      const name = townData.state?.town_name || 'Claw Town';
+      document.getElementById('town-name').textContent = name;
+      document.title = name + ' — Town Hall';
+
+      // Stats
+      const buildings = townData.buildings || [];
+      document.getElementById('stat-residents').textContent = buildings.length;
+      document.getElementById('stat-buildings').textContent = buildings.length;
+
+      // Rules
+      const rules = townData.state?.town_rules || [];
+      const rulesList = document.getElementById('rules-list');
+      if (rules.length === 0) {
+        rulesList.innerHTML = '<p class="rules-empty">no rules yet. ask Claw to add some.</p>';
+      } else {
+        rulesList.innerHTML = rules.map(r => `<li>${r}</li>`).join('');
+      }
+
+      // Residents grid
+      const grid = document.getElementById('residents-grid');
+      if (buildings.length === 0) {
+        grid.innerHTML = '<div style="color:#333;font-size:0.8rem;">no residents yet. be the first.</div>';
+      } else {
+        grid.innerHTML = buildings.map(b => `
+          <a href="/building/${b.username}" class="resident-card">
+            <span class="resident-emoji">${b.emoji || '🏠'}</span>
+            <span class="resident-name">${b.username}</span>
+            <span class="resident-type">${b.label || b.type || ''}</span>
+          </a>
+        `).join('');
+      }
+    }
+
+    // ── Socket ──
+    const socket = io();
+    let onlineCount = 0;
+
+    socket.on('connect', () => {
+      onlineCount++;
+      document.getElementById('stat-online').textContent = onlineCount;
+    });
+
+    socket.on('town_update', data => {
+      if (data.type === 'new_building') {
+        init(); // refresh
+      }
+    });
+
+    socket.on('chat_response', data => {
+      appendMsg('claw', data.content);
+      document.getElementById('chat-queue').textContent = '';
+    });
+
+    socket.on('queue_update', data => {
+      if (data.position !== undefined) {
+        document.getElementById('chat-queue').textContent =
+          data.position === 0 ? 'processing...' : `position ${data.position + 1} in queue`;
+      }
+    });
+
+    // ── Chat ──
+    function toggleChat() {
+      chatOpen = !chatOpen;
+      document.getElementById('chat-panel').classList.toggle('open', chatOpen);
+      if (chatOpen) { loadHistory(); document.getElementById('chat-input').focus(); }
+    }
+
+    async function loadHistory() {
+      const data = await fetch('/api/messages').then(r => r.json()).catch(() => []);
+      const box = document.getElementById('chat-msgs');
+      box.querySelectorAll('.msg:not(.system)').forEach(m => m.remove());
+      (Array.isArray(data) ? data : []).forEach(m => appendMsg(m.role === 'user' ? 'user' : 'claw', m.content, false));
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function appendMsg(role, content, scroll = true) {
+      const box = document.getElementById('chat-msgs');
+      const div = document.createElement('div');
+      div.className = `msg ${role}`;
+      div.textContent = content;
+      box.appendChild(div);
+      if (scroll) box.scrollTop = box.scrollHeight;
+    }
+
+    function chatKey(e) {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMsg(); }
+    }
+
+    async function sendMsg() {
+      const input = document.getElementById('chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      appendMsg('user', text);
+      document.getElementById('chat-send').disabled = true;
+      try {
+        const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text }) }).then(r => r.json());
+        if (res.queuePosition !== undefined) {
+          document.getElementById('chat-queue').textContent = res.queuePosition === 0 ? 'processing...' : `position ${res.queuePosition + 1} in queue`;
+        }
+      } catch { appendMsg('system', 'failed to send'); }
+      document.getElementById('chat-send').disabled = false;
+      document.getElementById('chat-input').focus();
+    }
+
+    init();
+  </script>
+</body>
+</html>
