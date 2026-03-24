@@ -128,16 +128,28 @@ function migrate() {
   }
 }
 
+// Immediate persist — used on shutdown and explicit flush
 function persist() {
   if (!db || !DB_PATH) return;
   const data = db.export();
   fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
 
+// Debounced persist — coalesces rapid writes into a single disk flush
+let persistTimer = null;
+function debouncedPersist() {
+  if (!DB_PATH) return;
+  if (persistTimer) return; // already scheduled
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    persist();
+  }, 500);
+}
+
 function run(sql, params = []) {
   getDb();
   db.run(sql, params);
-  persist();
+  debouncedPersist();
 }
 
 function all(sql, params = []) {
@@ -159,7 +171,7 @@ function get(sql, params = []) {
 function insert(sql, params = []) {
   db.run(sql, params);
   const result = all('SELECT last_insert_rowid() as id');
-  persist();
+  debouncedPersist();
   return result[0]?.id;
 }
 

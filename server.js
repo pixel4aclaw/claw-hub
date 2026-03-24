@@ -475,6 +475,7 @@ app.post('/api/repos', async (req, res) => {
 app.delete('/api/repos/:id', async (req, res) => {
   await getDb();
   const user = get('SELECT id FROM users WHERE username = ?', [req.user]);
+  if (!user) return res.status(404).json({ error: 'user not found' });
   const repo = get('SELECT * FROM repos WHERE id = ?', [req.params.id]);
   if (!repo) return res.status(404).json({ error: 'not found' });
   if (repo.user_id !== user.id) return res.status(403).json({ error: 'not yours' });
@@ -508,6 +509,16 @@ app.post('/api/blog', async (req, res) => {
   const post = get('SELECT * FROM blog_posts WHERE id = ?', [id]);
   io.emit('new_blog_post', post);
   res.json({ ok: true, post });
+});
+
+// ─── Socket.io ───────────────────────────────────────────────────────────────
+
+// ── Global async error handler ───────────────────────────────────────────────
+app.use((err, req, res, _next) => {
+  console.error(`[error] ${req.method} ${req.path}:`, err.message);
+  if (!res.headersSent) {
+    res.status(500).json({ error: 'internal server error' });
+  }
 });
 
 // ─── Socket.io ───────────────────────────────────────────────────────────────
