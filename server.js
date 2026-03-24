@@ -222,6 +222,62 @@ app.post('/api/mail/relay', async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Rate limit polling ───────────────────────────────────────────────────────
+
+let rateLimitCache = null;
+
+async function pollRateLimits() {
+  try {
+    const credPath = path.join(os.homedir(), '.claude', '.credentials.json');
+    const creds = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+    const token = creds.oauthAccessToken || creds.claudeAiOauth?.accessToken;
+    if (!token) return;
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': token,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1,
+        messages: [{ role: 'user', content: '.' }],
+      }),
+    });
+
+    const h = (name) => res.headers.get(name);
+    const now = Date.now();
+
+    rateLimitCache = {
+      status: h('anthropic-ratelimit-unified-status') || 'unknown',
+      tier: creds.rateLimitTier || 'unknown',
+      five_hour: {
+        utilization: parseFloat(h('anthropic-ratelimit-unified-5h-utilization')) || 0,
+        status: h('anthropic-ratelimit-unified-5h-status') || 'unknown',
+        reset: parseInt(h('anthropic-ratelimit-unified-5h-reset')) || 0,
+      },
+      seven_day: {
+        utilization: parseFloat(h('anthropic-ratelimit-unified-7d-utilization')) || 0,
+        status: h('anthropic-ratelimit-unified-7d-status') || 'unknown',
+        reset: parseInt(h('anthropic-ratelimit-unified-7d-reset')) || 0,
+      },
+      fallback_pct: parseFloat(h('anthropic-ratelimit-unified-fallback-percentage')) || 0,
+      polled_at: now,
+    };
+  } catch (e) {
+    if (process.env.NODE_ENV !== 'test')
+      console.error('[rate-limit-poll]', e.message);
+  }
+}
+
+// Poll every 10 minutes (skip in test mode)
+if (process.env.NODE_ENV !== 'test') {
+  pollRateLimits();
+  setInterval(pollRateLimits, 600000).unref();
+}
+
 // ── Status ────────────────────────────────────────────────────────────────────
 
 function readSys(filePath, transform) {
@@ -381,6 +437,7 @@ app.get('/api/status', async (req, res) => {
       queue_pending: queuePending,
       queue_done: queueDone,
     },
+    rateLimit: rateLimitCache,
   });
 });
 

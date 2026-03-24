@@ -937,7 +937,7 @@
     document.getElementById('status-updated').textContent =
       'updated ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-    const { server, system, stats } = data;
+    const { server, system, stats, rateLimit: rl } = data;
     const proc = data.process || {};
     const heap = proc.heap || {};
     const procMem = proc.memory || {};
@@ -1039,6 +1039,40 @@
         <div class="stat-grid">
           ${net.map(n => `<div class="stat-card"><div class="label">${esc(n.name)}</div><div class="value" style="font-size:0.85rem;font-family:monospace">${esc(n.address)}</div></div>`).join('')}
         </div>
+      </div>` : ''}
+
+      ${rl ? `
+      <div class="stat-section">
+        <h3>Claude API Quota</h3>
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="label">Status</div>
+            <div class="value" style="font-size:1rem;color:${rl.status === 'allowed' ? 'var(--green)' : '#ef4444'}">${rl.status}</div>
+            <div class="sub-value">${rl.tier ? rl.tier.replace(/_/g,' ') : ''}</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Fallback</div>
+            <div class="value" style="font-size:1rem">${Math.round(rl.fallback_pct * 100)}%</div>
+            <div class="sub-value">downgrade chance</div>
+          </div>
+        </div>
+        <div class="bar-row" style="margin-top:0.5rem">
+          <span class="bar-label" style="width:80px">5h window</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(rl.five_hour.utilization * 100)}%;background:linear-gradient(90deg,${rl.five_hour.utilization > 0.8 ? '#ef4444,#dc2626' : rl.five_hour.utilization > 0.5 ? '#f59e0b,#d97706' : 'var(--accent),var(--accent2)'})"></div></div>
+          <span class="bar-val">${Math.round(rl.five_hour.utilization * 100)}%</span>
+        </div>
+        <div class="bar-row" style="font-size:0.7rem;color:var(--muted);margin-top:-0.2rem;margin-bottom:0.5rem;padding-left:88px">
+          ${rl.five_hour.status} · resets ${new Date(rl.five_hour.reset * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}
+        </div>
+        <div class="bar-row">
+          <span class="bar-label" style="width:80px">7d window</span>
+          <div class="bar-track"><div class="bar-fill" style="width:${Math.round(rl.seven_day.utilization * 100)}%;background:linear-gradient(90deg,${rl.seven_day.utilization > 0.8 ? '#ef4444,#dc2626' : rl.seven_day.utilization > 0.5 ? '#f59e0b,#d97706' : 'var(--accent),var(--accent2)'})"></div></div>
+          <span class="bar-val">${Math.round(rl.seven_day.utilization * 100)}%</span>
+        </div>
+        <div class="bar-row" style="font-size:0.7rem;color:var(--muted);margin-top:-0.2rem;margin-bottom:0.5rem;padding-left:88px">
+          ${rl.seven_day.status} · resets ${new Date(rl.seven_day.reset * 1000).toLocaleDateString([], {weekday:'short',hour:'2-digit',minute:'2-digit'})}
+        </div>
+        <div style="font-size:0.62rem;color:#2a2a40;margin-top:0.4rem">polled ${rl.polled_at ? new Date(rl.polled_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'} · updates every 10m</div>
       </div>` : ''}
     `;
   }
