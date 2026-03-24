@@ -721,7 +721,7 @@
     <div id="panel-container">
 
       <!-- Chat panel -->
-      <div class="panel active" id="panel-chat">
+      <div class="panel" id="panel-chat">
         <div class="panel-header">
           <span class="status-dot" id="status-dot"></span>
           <h2>Claw</h2>
@@ -825,6 +825,11 @@
   const PANELS = ['chat', 'build', 'status', 'repos', 'blog'];
   let currentPanelIdx = 0;
 
+  function panelFromHash() {
+    const hash = location.hash.replace('#', '').toLowerCase();
+    return PANELS.includes(hash) ? hash : null;
+  }
+
   // ── Init ──────────────────────────────────────────────────────────
   async function init() {
     const [meData, history] = await Promise.all([
@@ -847,7 +852,11 @@
     // Reposition typing indicator at end
     msgBox.appendChild(typingEl);
 
-    document.getElementById('chat-input').focus();
+    // Restore panel from URL hash, or default to chat
+    const initialPanel = panelFromHash() || 'chat';
+    // Seed history state so popstate fires correctly on back from this page
+    history.replaceState({ panel: initialPanel }, '', `#${initialPanel}`);
+    activatePanel(initialPanel, null);
 
     // Pre-load data in background
     loadRepos(true);
@@ -856,36 +865,52 @@
   }
 
   // ── Panel navigation ──────────────────────────────────────────────
-  function showPanel(name) {
+
+  // activatePanel: pure DOM switch, no history side-effects
+  function activatePanel(name, direction) {
     const nextIdx = PANELS.indexOf(name);
-    const currIdx = currentPanelIdx;
-    if (nextIdx === currIdx) return;
+    if (nextIdx === -1) return;
 
-    haptic(6);
-    currentPanelIdx = nextIdx;
-
-    const goingRight = nextIdx > currIdx;
-
-    // Deactivate all panels
     document.querySelectorAll('.panel').forEach(p => {
       p.classList.remove('active', 'from-right', 'from-left');
     });
 
-    // Activate target panel with directional entrance animation
     const next = document.getElementById(`panel-${name}`);
-    next.classList.add('active', goingRight ? 'from-right' : 'from-left');
-
-    // Clean up animation class after it finishes so it can re-trigger
-    setTimeout(() => next.classList.remove('from-right', 'from-left'), 300);
+    const animClass = direction === 'forward' ? 'from-right' : direction === 'back' ? 'from-left' : null;
+    next.classList.add('active');
+    if (animClass) {
+      next.classList.add(animClass);
+      setTimeout(() => next.classList.remove('from-right', 'from-left'), 300);
+    }
 
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     document.querySelector(`[data-panel="${name}"]`).classList.add('active');
+
+    currentPanelIdx = nextIdx;
 
     if (name === 'status') loadStatus();
     if (name === 'repos')  loadRepos();
     if (name === 'blog')   { loadBlog(); newBlogSinceView = 0; updateBlogBadge(); }
     if (name === 'chat')   document.getElementById('chat-input').focus();
   }
+
+  // showPanel: user-driven navigation — updates URL history
+  function showPanel(name) {
+    const nextIdx = PANELS.indexOf(name);
+    if (nextIdx === currentPanelIdx) return;
+    haptic(6);
+    const direction = nextIdx > currentPanelIdx ? 'forward' : 'back';
+    history.pushState({ panel: name }, '', `#${name}`);
+    activatePanel(name, direction);
+  }
+
+  // Back/forward button support
+  window.addEventListener('popstate', e => {
+    const name = e.state?.panel || panelFromHash() || 'chat';
+    const nextIdx = PANELS.indexOf(name);
+    const direction = nextIdx > currentPanelIdx ? 'forward' : 'back';
+    activatePanel(name, direction);
+  });
 
   // ── Chat ──────────────────────────────────────────────────────────
   function scrollToBottom(smooth = true) {
