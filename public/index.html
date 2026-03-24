@@ -1855,6 +1855,22 @@
     }
   });
 
+  // Restore typing indicator when tab becomes visible again (no disconnect needed)
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible') return;
+    try {
+      const qs = await fetch('/api/queue-status').then(r => r.json());
+      if (qs.active) {
+        showTyping();
+        const q = document.getElementById('queue-status');
+        q.textContent = qs.position === 0 ? 'thinking…' : `#${qs.position + 1} in queue`;
+      } else {
+        // Agent finished while we were away — make sure indicator is hidden
+        hideTyping();
+      }
+    } catch (_) {}
+  });
+
   // ── Build panel ───────────────────────────────────────────────────
   const BUILD_IDEAS = [
     {
