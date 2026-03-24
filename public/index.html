@@ -1236,7 +1236,10 @@
     }
     // Insert before typing indicator
     msgBox.insertBefore(div, typingEl);
-    if (scroll) scrollToBottom();
+    if (scroll) {
+      const nearBottom = msgBox.scrollHeight - msgBox.scrollTop - msgBox.clientHeight < 120;
+      if (nearBottom) scrollToBottom();
+    }
   }
 
   // ── Fun loading quips (shown after 10s of waiting) ──────────────
