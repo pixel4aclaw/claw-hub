@@ -637,7 +637,23 @@ function shutdown(signal) {
 if (require.main === module) {
   start().catch(console.error);
   process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT',  () => shutdown('SIGINT'));
+  // SIGINT is ignored — the claude binary sends SIGINT to the process group
+  // when it exits, which was killing the server. pm2 uses SIGTERM for shutdown.
+  process.on('SIGINT', () => {
+    console.log('[SIGINT] Ignored (claude subprocess signal leak)');
+  });
+  process.on('uncaughtException', (err) => {
+    console.error('[uncaughtException]', err.stack || err.message || err);
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error('[unhandledRejection]', reason?.stack || reason?.message || reason);
+  });
+  process.on('exit', (code) => {
+    console.error(`[exit] process exiting with code ${code}`);
+  });
+  process.on('SIGHUP', () => console.log('[signal] SIGHUP received'));
+  process.on('SIGUSR1', () => console.log('[signal] SIGUSR1 received'));
+  process.on('SIGUSR2', () => console.log('[signal] SIGUSR2 received'));
 }
 
 module.exports = { app, server, io, start, stop, rateLimit };

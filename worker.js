@@ -15,7 +15,7 @@
  */
 
 const path = require('path');
-const { query } = require('@anthropic-ai/claude-agent-sdk');
+const { fork } = require('child_process');
 const { get, all, insert, run } = require('./db');
 
 const POLL_INTERVAL_MS = 2000;
@@ -71,6 +71,14 @@ function parseRateLimitReset(msg) {
   return Date.now() + 2 * 60 * 60 * 1000; // 2-hour default
 }
 
+/**
+ * Run the Claude SDK query in an isolated child process.
+ *
+ * The SDK spawns the claude binary in the same process group. When the binary
+ * exits it sends SIGKILL to the group, killing the parent server. By forking
+ * agent-child.js with detached:true, the SDK and its subprocess live in their
+ * own process group — signals can't reach the server.
+ */
 async function callAgent(username, userId, userMessage, forceNewSession) {
   const user = get('SELECT session_id FROM users WHERE id = ?', [userId]);
   const existingSessionId = forceNewSession ? null : user?.session_id;
@@ -100,45 +108,66 @@ async function callAgent(username, userId, userMessage, forceNewSession) {
     options.resume = existingSessionId;
   }
 
-  let result = '';
-  let newSessionId = null;
-  let rateLimitedUntil = 0;
+  return new Promise((resolve, reject) => {
+    const child = fork(path.join(__dirname, 'agent-child.js'), [], {
+      detached: true,
+      stdio: ['pipe', 'inherit', 'inherit', 'ipc'],
+    });
 
-  for await (const message of query({ prompt: userMessage, options })) {
-    if (message.type === 'system' && message.subtype === 'init') {
-      newSessionId = message.session_id;
-    }
-    if ('result' in message) {
-      result = message.result || '';
-    }
-    if (message.type === 'rate_limit_event') {
-      const info = message.rate_limit_info || {};
-      console.log(`[queue] rate_limit_event info: ${JSON.stringify(info)}`);
-      const resetSec = info.resetsAt || info.resetAt || info.reset_at || info.reset || 0;
-      // Parse from message string if available, else default to 2 hours (not 60s)
-      const msgStr = info.message || info.error || '';
-      rateLimitedUntil = resetSec
-        ? resetSec * 1000
-        : msgStr
-          ? parseRateLimitReset(msgStr)
-          : Date.now() + 2 * 60 * 60 * 1000;
-      const waitMin = Math.ceil((rateLimitedUntil - Date.now()) / 60000);
-      console.log(`[queue] rate limited, resets in ~${waitMin}min`);
-      globalRateLimitedUntil = Math.max(globalRateLimitedUntil, rateLimitedUntil);
-    }
-  }
+    let settled = false;
 
-  // If we were rate limited and got no result, propagate a specific error
-  if (!result && rateLimitedUntil > Date.now()) {
-    const waitMin = Math.ceil((rateLimitedUntil - Date.now()) / 60000);
-    throw Object.assign(new Error(`rate limited — resets in ~${waitMin}min`), { rateLimitedUntil });
-  }
+    child.on('message', (msg) => {
+      if (settled) return;
+      settled = true;
 
-  if (newSessionId && newSessionId !== existingSessionId) {
-    run('UPDATE users SET session_id = ? WHERE id = ?', [newSessionId, userId]);
-  }
+      if (msg.ok) {
+        // Update rate limit tracking
+        if (msg.rateLimitInfo) {
+          const info = msg.rateLimitInfo;
+          const resetSec = info.resetsAt || info.resetAt || info.reset_at || info.reset || 0;
+          const msgStr = info.message || info.error || '';
+          const rateLimitedUntil = resetSec
+            ? resetSec * 1000
+            : msgStr
+              ? parseRateLimitReset(msgStr)
+              : Date.now() + 2 * 60 * 60 * 1000;
+          globalRateLimitedUntil = Math.max(globalRateLimitedUntil, rateLimitedUntil);
+        }
 
-  return result;
+        // Update session if changed
+        if (msg.newSessionId && msg.newSessionId !== existingSessionId) {
+          run('UPDATE users SET session_id = ? WHERE id = ?', [msg.newSessionId, userId]);
+        }
+
+        resolve(msg.result || '');
+      } else {
+        const err = new Error(msg.error || 'Agent child failed');
+        if (msg.rateLimitedUntil) {
+          err.rateLimitedUntil = msg.rateLimitedUntil;
+          globalRateLimitedUntil = Math.max(globalRateLimitedUntil, msg.rateLimitedUntil);
+        }
+        reject(err);
+      }
+
+      // Don't hold the parent open waiting for the detached child
+      child.unref();
+    });
+
+    child.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      reject(err);
+    });
+
+    child.on('exit', (code) => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`Agent child exited with code ${code} before sending result`));
+    });
+
+    // Send the task
+    child.send({ prompt: userMessage, options });
+  });
 }
 
 function friendlyError(err) {
