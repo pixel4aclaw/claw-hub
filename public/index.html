@@ -857,7 +857,7 @@
 
   // ── Init ──────────────────────────────────────────────────────────
   async function init() {
-    const [meData, history] = await Promise.all([
+    const [meData, msgHistory] = await Promise.all([
       fetch('/api/me').then(r => r.json()),
       fetch('/api/messages').then(r => r.json()).catch(() => []),
     ]);
@@ -867,7 +867,7 @@
     const mt = document.getElementById('user-tag-mobile');
     if (mt) mt.textContent = me.username;
 
-    const msgs = Array.isArray(history) ? history : [];
+    const msgs = Array.isArray(msgHistory) ? msgHistory : [];
     if (msgs.length > 0) {
       document.getElementById('welcome')?.remove();
       msgs.forEach(m => appendMsg(m.role === 'user' ? 'user' : 'claw', m.content, m.created_at, false, true));
