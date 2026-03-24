@@ -78,7 +78,15 @@ async function callAgent(username, userId, userMessage, forceNewSession) {
     if ('result' in message) {
       result = message.result || '';
     }
+    // Debug: log unexpected message shapes
+    if (message.type && !['system', 'assistant', 'user', 'tool', 'result'].includes(message.type)) {
+      console.log(`[queue] sdk msg type=${message.type} subtype=${message.subtype} keys=${Object.keys(message).join(',')}`);
+    }
+    if (message.type === 'result') {
+      console.log(`[queue] sdk result subtype=${message.subtype} result_len=${(message.result||'').length}`);
+    }
   }
+  console.log(`[queue] callAgent done, result_len=${result.length}`);
 
   if (newSessionId && newSessionId !== existingSessionId) {
     run('UPDATE users SET session_id = ? WHERE id = ?', [newSessionId, userId]);
