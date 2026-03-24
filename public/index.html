@@ -183,8 +183,43 @@
       background: var(--green);
       animation: pulse 2s infinite;
       flex-shrink: 0;
+      transition: background 0.3s;
     }
+    .status-dot.offline { background: #ef4444; animation: pulse 0.8s infinite; }
+    .status-dot.reconnecting { background: #f59e0b; animation: pulse 0.6s infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* ── Connection banner ───────────────────────────────────────────── */
+    #conn-banner {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.4rem 1rem;
+      font-size: 0.72rem;
+      font-weight: 500;
+      flex-shrink: 0;
+      z-index: 10;
+    }
+    #conn-banner.offline {
+      display: flex;
+      background: rgba(239,68,68,0.12);
+      color: #fca5a5;
+      border-bottom: 1px solid rgba(239,68,68,0.2);
+    }
+    #conn-banner.reconnecting {
+      display: flex;
+      background: rgba(245,158,11,0.1);
+      color: #fcd34d;
+      border-bottom: 1px solid rgba(245,158,11,0.15);
+    }
+    #conn-banner .spinner {
+      width: 10px; height: 10px; border-radius: 50%;
+      border: 1.5px solid currentColor;
+      border-top-color: transparent;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── Chat panel ──────────────────────────────────────────────────── */
     #messages {
@@ -681,9 +716,13 @@
       <!-- Chat panel -->
       <div class="panel active" id="panel-chat">
         <div class="panel-header">
-          <span class="status-dot"></span>
+          <span class="status-dot" id="status-dot"></span>
           <h2>Claw</h2>
           <span class="sub" id="queue-status"></span>
+        </div>
+        <div id="conn-banner">
+          <span class="spinner"></span>
+          <span id="conn-banner-text">reconnecting…</span>
         </div>
         <div id="messages">
           <div class="welcome-block" id="welcome">
@@ -1166,7 +1205,56 @@
   }
 
   // ── Socket.io ─────────────────────────────────────────────────────
-  const socket = io();
+  const socket = io({ reconnectionDelay: 1000, reconnectionDelayMax: 8000 });
+
+  const dot = document.getElementById('status-dot');
+  const banner = document.getElementById('conn-banner');
+  const bannerText = document.getElementById('conn-banner-text');
+  let wasEverConnected = false;
+  let reconnectAttempts = 0;
+
+  function setConnState(state) {
+    dot.className = 'status-dot' + (state !== 'connected' ? ' ' + state : '');
+    banner.className = state === 'connected' ? '' : state === 'offline' ? 'offline' : 'reconnecting';
+    banner.style.display = state === 'connected' ? 'none' : 'flex';
+  }
+
+  socket.on('connect', async () => {
+    const wasReconnect = wasEverConnected;
+    wasEverConnected = true;
+    reconnectAttempts = 0;
+    setConnState('connected');
+    if (wasReconnect) {
+      // Resync messages in case any arrived while offline
+      const history = await fetch('/api/messages').then(r => r.json()).catch(() => null);
+      if (history?.length) {
+        const rendered = msgBox.querySelectorAll('.msg:not(.system)').length;
+        const newMsgs = history.slice(rendered);
+        newMsgs.forEach(m => appendMsg(m.role === 'user' ? 'user' : 'claw', m.content, m.created_at, false, true));
+        if (newMsgs.length) {
+          appendMsg('system', '↑ messages synced after reconnect', null, true);
+        }
+      }
+    }
+  });
+
+  socket.on('disconnect', reason => {
+    setConnState('offline');
+    bannerText.textContent = `offline — ${reason === 'io server disconnect' ? 'session ended' : 'connection lost'}`;
+    hideTyping();
+  });
+
+  socket.on('connect_error', () => {
+    reconnectAttempts++;
+    setConnState('reconnecting');
+    bannerText.textContent = `reconnecting… (attempt ${reconnectAttempts})`;
+  });
+
+  socket.on('reconnect_attempt', n => {
+    reconnectAttempts = n;
+    setConnState('reconnecting');
+    bannerText.textContent = `reconnecting… (attempt ${n})`;
+  });
 
   socket.on('chat_response', data => {
     hideTyping();
