@@ -4,6 +4,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cookieParser = require('cookie-parser');
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const { getDb, all, get, insert, run, persist } = require('./db');
 const { requireAuth, setSession, getSession, clearSession, SITE_PASSWORD } = require('./auth');
 
@@ -174,6 +176,133 @@ app.post('/api/mail/relay', async (req, res) => {
   });
 
   res.json({ ok: true });
+});
+
+// ── Status ────────────────────────────────────────────────────────────────────
+
+function readSys(filePath, transform) {
+  try {
+    const raw = fs.readFileSync(filePath, 'utf8').trim();
+    return transform ? transform(raw) : raw;
+  } catch { return null; }
+}
+
+app.get('/api/status', async (req, res) => {
+  await getDb();
+
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMem = totalMem - freeMem;
+
+  // Android thermal zones
+  const temps = [];
+  for (let i = 0; i < 10; i++) {
+    const t = readSys(`/sys/class/thermal/thermal_zone${i}/temp`, v => Math.round(parseInt(v) / 1000));
+    if (t !== null && t > 0 && t < 150) temps.push(t);
+  }
+
+  const battery = {
+    capacity: readSys('/sys/class/power_supply/battery/capacity', v => parseInt(v)),
+    status: readSys('/sys/class/power_supply/battery/status'),
+  };
+
+  const userCount = (get('SELECT COUNT(*) as c FROM users') || {}).c || 0;
+  const msgCount  = (get('SELECT COUNT(*) as c FROM messages WHERE role = ?', ['user']) || {}).c || 0;
+  const repoCount = (get('SELECT COUNT(*) as c FROM repos') || {}).c || 0;
+  const postCount = (get('SELECT COUNT(*) as c FROM blog_posts') || {}).c || 0;
+
+  res.json({
+    server: {
+      uptime: Math.floor(process.uptime()),
+      connections: io.engine.clientsCount,
+      node: process.version,
+      platform: os.platform(),
+    },
+    system: {
+      hostname: os.hostname(),
+      arch: os.arch(),
+      uptime: Math.floor(os.uptime()),
+      load: os.loadavg().map(l => Math.round(l * 100) / 100),
+      memory: {
+        total_mb: Math.round(totalMem / 1024 / 1024),
+        used_mb: Math.round(usedMem / 1024 / 1024),
+        free_mb: Math.round(freeMem / 1024 / 1024),
+        pct: Math.round((usedMem / totalMem) * 100),
+      },
+      temps_c: temps,
+      battery,
+    },
+    stats: { users: userCount, messages: msgCount, repos: repoCount, blog_posts: postCount },
+  });
+});
+
+// ── Repos ─────────────────────────────────────────────────────────────────────
+
+app.get('/api/repos', async (req, res) => {
+  await getDb();
+  const repos = all(`
+    SELECT r.*, u.username
+    FROM repos r
+    JOIN users u ON r.user_id = u.id
+    ORDER BY r.created_at DESC
+  `);
+  res.json(repos);
+});
+
+app.post('/api/repos', async (req, res) => {
+  const { name, description, repo_url, site_url } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+
+  await getDb();
+  const user = get('SELECT id FROM users WHERE username = ?', [req.user]);
+  if (!user) return res.status(404).json({ error: 'user not found' });
+
+  const id = insert(
+    'INSERT INTO repos (user_id, name, description, repo_url, site_url) VALUES (?,?,?,?,?)',
+    [user.id, name.trim(), (description || '').trim(), (repo_url || '').trim(), (site_url || '').trim()]
+  );
+
+  const repo = get('SELECT r.*, u.username FROM repos r JOIN users u ON r.user_id = u.id WHERE r.id = ?', [id]);
+  io.emit('new_repo', repo);
+  res.json({ ok: true, repo });
+});
+
+app.delete('/api/repos/:id', async (req, res) => {
+  await getDb();
+  const user = get('SELECT id FROM users WHERE username = ?', [req.user]);
+  const repo = get('SELECT * FROM repos WHERE id = ?', [req.params.id]);
+  if (!repo) return res.status(404).json({ error: 'not found' });
+  if (repo.user_id !== user.id) return res.status(403).json({ error: 'not yours' });
+  run('DELETE FROM repos WHERE id = ?', [req.params.id]);
+  res.json({ ok: true });
+});
+
+// ── Blog ──────────────────────────────────────────────────────────────────────
+
+app.get('/api/blog', async (req, res) => {
+  await getDb();
+  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+  const offset = parseInt(req.query.offset) || 0;
+  const posts = all(
+    'SELECT * FROM blog_posts ORDER BY created_at DESC LIMIT ? OFFSET ?',
+    [limit, offset]
+  );
+  res.json(posts);
+});
+
+app.post('/api/blog', async (req, res) => {
+  const { title, body, topic } = req.body;
+  if (!title?.trim() || !body?.trim()) return res.status(400).json({ error: 'title and body required' });
+
+  await getDb();
+  const id = insert(
+    'INSERT INTO blog_posts (title, body, topic) VALUES (?,?,?)',
+    [title.trim(), body.trim(), (topic || '').trim()]
+  );
+
+  const post = get('SELECT * FROM blog_posts WHERE id = ?', [id]);
+  io.emit('new_blog_post', post);
+  res.json({ ok: true, post });
 });
 
 // ─── Socket.io ───────────────────────────────────────────────────────────────

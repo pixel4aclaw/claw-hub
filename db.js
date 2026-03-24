@@ -64,10 +64,27 @@ function initSchema() {
       from_claw INTEGER NOT NULL DEFAULT 0,
       created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     );
+
+    CREATE TABLE IF NOT EXISTS repos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      repo_url TEXT DEFAULT '',
+      site_url TEXT DEFAULT '',
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS blog_posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      topic TEXT DEFAULT '',
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    );
   `);
 }
 
-// Migrations for existing DBs
 function migrate() {
   try {
     db.run(`CREATE TABLE IF NOT EXISTS mail (
@@ -78,6 +95,22 @@ function migrate() {
       body TEXT NOT NULL,
       read INTEGER NOT NULL DEFAULT 0,
       from_claw INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS repos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      name TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      repo_url TEXT DEFAULT '',
+      site_url TEXT DEFAULT '',
+      created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS blog_posts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      body TEXT NOT NULL,
+      topic TEXT DEFAULT '',
       created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     )`);
     persist();
