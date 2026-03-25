@@ -166,10 +166,11 @@ async function callAgent(username, userId, userMessage, forceNewSession, onProgr
       reject(err);
     });
 
-    child.on('exit', (code) => {
+    child.on('exit', (code, signal) => {
       if (settled) return;
       settled = true;
-      reject(new Error(`Agent child exited with code ${code} before sending result`));
+      const reason = signal ? `signal ${signal}` : `code ${code}`;
+      reject(new Error(`Agent child exited with ${reason} before sending result`));
     });
 
     // Send the task
