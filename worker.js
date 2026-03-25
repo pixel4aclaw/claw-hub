@@ -19,8 +19,8 @@ const { fork } = require('child_process');
 const { get, all, insert, run } = require('./db');
 
 const POLL_INTERVAL_MS = 2000;
-const AGENT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes (allows for longer requests + multiple children)
-const STALE_THRESHOLD_S = 960; // 16 minutes in seconds (slightly over AGENT_TIMEOUT_MS)
+const AGENT_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes (parallel users + long requests)
+const STALE_THRESHOLD_S = 1860; // 31 minutes in seconds (slightly over AGENT_TIMEOUT_MS)
 const MAX_RETRIES = 2; // total attempts per queue item
 const BACKOFF_MS = 3000; // pause between retries
 const ALERT_THRESHOLD = 3; // consecutive errors before alerting admin
