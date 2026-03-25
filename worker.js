@@ -395,7 +395,7 @@ function reclaimOverdue(io) {
   }
 }
 
-function startWorker(io) {
+function startWorker(io, getRateLimitCache) {
   if (process.env.NODE_ENV === 'test') return;
 
   // On startup: unconditionally reclaim ALL processing items — nothing is legitimately in-flight yet
@@ -407,6 +407,47 @@ function startWorker(io) {
 
   async function tick() {
     if (busy) return;
+
+    // Check quota thresholds before dequeuing — no LLM calls, just cached headers
+    if (getRateLimitCache) {
+      const rlc = getRateLimitCache();
+      if (rlc) {
+        const fiveHourOver = rlc.five_hour.utilization > 0.80;
+        const sevenDayOver = rlc.seven_day.utilization > 0.90;
+        if (fiveHourOver || sevenDayOver) {
+          if (!quotaThrottleNotified) {
+            const resetSec = Math.max(rlc.five_hour.reset || 0, rlc.seven_day.reset || 0);
+            const resetMs = resetSec * 1000;
+            const reason = sevenDayOver ? '7-day' : '5-hour';
+            const pct = sevenDayOver
+              ? Math.round(rlc.seven_day.utilization * 100)
+              : Math.round(rlc.five_hour.utilization * 100);
+            const resetStr = resetMs > Date.now()
+              ? new Date(resetMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : 'soon';
+            const msg = `⏸ Chat is throttled — ${reason} quota at ${pct}%. Your message is saved and will auto-send after the limit resets at ${resetStr}.`;
+            // Park all unblocked pending items and notify their users
+            const pending = all(
+              `SELECT q.id, u.username FROM queue q
+               JOIN users u ON q.user_id = u.id
+               WHERE q.status = 'pending'
+                 AND (q.blocked_until IS NULL OR q.blocked_until < ?)`,
+              [resetSec]
+            );
+            for (const item of pending) {
+              run('UPDATE queue SET blocked_until = ? WHERE id = ?', [resetSec, item.id]);
+              io.to(`user:${item.username}`).emit('quota_throttled', { resetAt: resetMs, message: msg });
+            }
+            quotaThrottleNotified = true;
+            console.log(`[worker] quota throttle — ${reason} ${pct}%, reset=${new Date(resetMs).toISOString()}, parked ${pending.length} items`);
+          }
+          return;
+        }
+        // Quota is back under threshold — clear flag so next throttle re-notifies
+        quotaThrottleNotified = false;
+      }
+    }
+
     busy = true;
     try { await processNext(io); } finally { busy = false; }
   }
