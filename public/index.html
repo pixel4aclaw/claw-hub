@@ -1525,19 +1525,16 @@
     typingEl.classList.add('visible');
     scrollToBottom();
     stopQuips();
-    // startedAt: unix seconds when the queue item was created
-    const elapsed = startedAt ? (Date.now() / 1000 - startedAt) * 1000 : 0;
-    const delay = Math.max(0, 10000 - elapsed);
-    if (delay === 0) {
-      startQuips();
-    } else {
-      quipStartTimer = setTimeout(() => startQuips(), delay);
-    }
+    // Show quips immediately — no delay
+    startQuips();
   }
 
   function hideTyping() {
     typingEl.classList.remove('visible');
     stopQuips();
+    // Clear chain-of-thought progress line
+    const progressEl = typingEl.querySelector('.typing-progress');
+    if (progressEl) { progressEl.classList.remove('active'); progressEl.textContent = ''; }
   }
 
   async function sendMsg() {
