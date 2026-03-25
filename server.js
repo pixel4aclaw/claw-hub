@@ -742,7 +742,7 @@ async function start(port) {
         console.log(`Claw Hub running on http://0.0.0.0:${server.address().port}`);
         startCommitWatcher();
       }
-      startWorker(io);
+      startWorker(io, getRateLimitCache);
       resolve(server);
     });
   });
