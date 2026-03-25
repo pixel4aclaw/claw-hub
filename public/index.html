@@ -2097,14 +2097,18 @@
 
 
   // ── Chain-of-thought streaming ──────────────────────────────────
+  const progressLog = [];
   socket.on('agent_progress', data => {
-    const progressEl = typingEl.querySelector('.typing-progress');
-    if (progressEl && data.status) {
-      progressEl.textContent = data.status;
-      progressEl.classList.add('active');
-      // Also start quips immediately if not already running
-      if (!quipCycleTimer) startQuips();
-    }
+    const logEl = typingEl.querySelector('.typing-log');
+    if (!logEl || !data.status) return;
+    // Hide quips once real progress arrives
+    stopQuips();
+    progressLog.push(data.status);
+    if (progressLog.length > 5) progressLog.shift();
+    logEl.innerHTML = progressLog.map(s =>
+      `<div class="typing-log-item">${s.replace(/</g,'&lt;')}</div>`
+    ).join('');
+    scrollToBottom();
   });
 
   socket.on('new_mail', data => {
