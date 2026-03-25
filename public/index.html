@@ -2069,6 +2069,17 @@
     }
   });
 
+  // ── Chain-of-thought streaming ──────────────────────────────────
+  socket.on('agent_progress', data => {
+    const progressEl = typingEl.querySelector('.typing-progress');
+    if (progressEl && data.status) {
+      progressEl.textContent = data.status;
+      progressEl.classList.add('active');
+      // Also start quips immediately if not already running
+      if (!quipCycleTimer) startQuips();
+    }
+  });
+
   socket.on('new_mail', data => {
     if (data?.body) {
       hideTyping();
