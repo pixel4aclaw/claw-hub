@@ -115,6 +115,19 @@ app.get('/api/me', async (req, res) => {
   res.json(user || { error: 'not found' });
 });
 
+// ── Users ─────────────────────────────────────────────────────────────────────
+
+app.get('/api/users', async (req, res) => {
+  await getDb();
+  const users = all(`
+    SELECT u.id, u.username, u.created_at,
+           (SELECT COUNT(*) FROM messages WHERE user_id = u.id AND role = 'user') as message_count
+    FROM users u
+    ORDER BY u.created_at ASC
+  `);
+  res.json(users);
+});
+
 // ── Chat / queue ──────────────────────────────────────────────────────────────
 
 app.get('/api/messages', async (req, res) => {
@@ -635,6 +648,13 @@ function shutdown(signal) {
 }
 
 if (require.main === module) {
+  // Intercept process.exit to trace what's calling it
+  const _origExit = process.exit.bind(process);
+  process.exit = function(code) {
+    console.error(`[process.exit] called with code=${code}`, new Error().stack);
+    _origExit(code);
+  };
+
   start().catch(console.error);
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   // SIGINT is ignored — the claude binary sends SIGINT to the process group
@@ -642,6 +662,9 @@ if (require.main === module) {
   process.on('SIGINT', () => {
     console.log('[SIGINT] Ignored (claude subprocess signal leak)');
   });
+  process.on('SIGQUIT', () => console.log('[signal] SIGQUIT received — ignored'));
+  // Hook server close to trace who closes it
+  server.on('close', () => console.error('[server] HTTP server closed — this will drain event loop!', new Error().stack));
   process.on('uncaughtException', (err) => {
     console.error('[uncaughtException]', err.stack || err.message || err);
   });
@@ -649,11 +672,16 @@ if (require.main === module) {
     console.error('[unhandledRejection]', reason?.stack || reason?.message || reason);
   });
   process.on('exit', (code) => {
-    console.error(`[exit] process exiting with code ${code}`);
+    console.error(`[exit] code=${code} server.listening=${server.listening} clients=${io?.engine?.clientsCount ?? '?'}`);
+    console.error(`[exit] active handles:`, process._getActiveHandles().length, 'requests:', process._getActiveRequests().length);
   });
   process.on('SIGHUP', () => console.log('[signal] SIGHUP received'));
   process.on('SIGUSR1', () => console.log('[signal] SIGUSR1 received'));
   process.on('SIGUSR2', () => console.log('[signal] SIGUSR2 received'));
+
+  // Safety net: keep-alive timer prevents event loop drain.
+  // The HTTP server should do this, but something lets the loop die after agent calls.
+  setInterval(() => {}, 30000);
 }
 
 module.exports = { app, server, io, start, stop, rateLimit };
