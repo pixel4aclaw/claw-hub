@@ -179,7 +179,7 @@ async function callAgent(username, userId, userMessage, forceNewSession, onProgr
 function friendlyError(err) {
   const msg = err.message || '';
   if (msg.includes('timed out'))
-    return 'That took too long and I had to stop \u2014 this can happen with complex requests. Your message is saved, so just send **try again** and I\'ll pick up where I left off.';
+    return 'That took too long and I had to stop \u2014 this can happen with complex requests. Your message is saved, so just send **try again** and I\'ll give it another shot.';
   if (msg.includes('Empty response'))
     return 'I processed your message but came back empty-handed \u2014 probably a hiccup. Send **try again** and I\'ll give it another shot.';
   if (msg.includes('400') || msg.includes('invalid_request'))
