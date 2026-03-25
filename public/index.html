@@ -1528,9 +1528,10 @@
   function hideTyping() {
     typingEl.classList.remove('visible');
     stopQuips();
-    // Clear chain-of-thought progress line
-    const progressEl = typingEl.querySelector('.typing-progress');
-    if (progressEl) { progressEl.classList.remove('active'); progressEl.textContent = ''; }
+    // Clear command log
+    progressLog.length = 0;
+    const logEl = typingEl.querySelector('.typing-log');
+    if (logEl) logEl.innerHTML = '';
   }
 
   async function sendMsg() {
