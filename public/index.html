@@ -2106,9 +2106,11 @@
     const emojis = ['🚀', '🚢', '📦', '🎉', '⚡', '🔥'];
     const emoji = emojis[Math.floor(Math.random() * emojis.length)];
 
+    const repoLabel = commit.repo ? `<div class="shipit-repo">${esc(commit.repo)}</div>` : '';
     toast.innerHTML = `
       <div class="shipit-emoji">${emoji}</div>
       <div class="shipit-label">SHIP IT!</div>
+      ${repoLabel}
       <div class="shipit-msg">${esc(commit.hash || '')} ${esc((commit.message || '').slice(0, 50))}</div>
     `;
 

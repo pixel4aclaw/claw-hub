@@ -611,46 +611,106 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => console.log(`[-] ${socket.username} disconnected`));
 });
 
-// ── Commit watcher bot ────────────────────────────────────────────────────────
+// ── Commit watcher bot (all repos in pixel4aclaw account) ─────────────────────
 
-let lastCommitHash = null;
+const GITHUB_USER = 'pixel4aclaw';
+const seenCommitIds = new Set(); // track seen push event IDs to avoid dupes
+let localLastHash = null;        // still track local repo for instant detection
 
 function startCommitWatcher() {
-  // Get initial commit hash
+  // ── Local repo watcher (instant, 5s poll) ──
   try {
-    lastCommitHash = execSync('git rev-parse HEAD', { cwd: __dirname, timeout: 5000 }).toString().trim();
+    localLastHash = execSync('git rev-parse HEAD', { cwd: __dirname, timeout: 5000 }).toString().trim();
   } catch (e) {
-    console.error('[commit-watcher] failed to get initial hash:', e.message);
+    console.error('[commit-watcher] failed to get initial local hash:', e.message);
   }
 
   setInterval(() => {
     try {
-      // Fetch latest (pull won't work if there are local changes, so just check log)
       const currentHash = execSync('git rev-parse HEAD', { cwd: __dirname, timeout: 5000 }).toString().trim();
-
-      if (lastCommitHash && currentHash !== lastCommitHash) {
-        // Get commit info
+      if (localLastHash && currentHash !== localLastHash) {
         const log = execSync(
-          `git log ${lastCommitHash}..${currentHash} --pretty=format:"%h|%s|%an" --reverse`,
+          `git log ${localLastHash}..${currentHash} --pretty=format:"%h|%s|%an" --reverse`,
           { cwd: __dirname, timeout: 5000 }
         ).toString().trim();
 
         const commits = log.split('\n').filter(Boolean).map(line => {
           const [hash, message, author] = line.split('|');
-          return { hash, message, author };
+          return { hash, message, author, repo: 'claw-hub' };
         });
 
         for (const commit of commits) {
-          console.log(`[commit-watcher] 🚀 ${commit.hash} ${commit.message} by ${commit.author}`);
+          const id = `local-${commit.hash}`;
+          if (!seenCommitIds.has(id)) {
+            seenCommitIds.add(id);
+            console.log(`[commit-watcher] 🚀 ${commit.repo} ${commit.hash} ${commit.message} by ${commit.author}`);
+            io.emit('new_commit', commit);
+          }
+        }
+      }
+      localLastHash = currentHash;
+    } catch (e) { /* mid-commit, ignore */ }
+  }, 5000).unref();
+
+  // ── GitHub Events API watcher (all repos, 30s poll) ──
+  // Covers every repo in the account including ones created after server start
+  let ghInitialized = false;
+
+  setInterval(async () => {
+    try {
+      const raw = execSync(
+        `gh api users/${GITHUB_USER}/events --jq '[.[] | select(.type=="PushEvent")] | .[0:20]'`,
+        { timeout: 15000 }
+      ).toString().trim();
+
+      if (!raw || raw === '[]') return;
+      const events = JSON.parse(raw);
+
+      // On first run, just seed the seen set — don't spam old commits
+      if (!ghInitialized) {
+        for (const ev of events) seenCommitIds.add(ev.id);
+        ghInitialized = true;
+        console.log(`[commit-watcher] GitHub watcher initialized, seeded ${events.length} events`);
+        return;
+      }
+
+      for (const ev of events) {
+        if (seenCommitIds.has(ev.id)) continue;
+        seenCommitIds.add(ev.id);
+
+        const repoName = (ev.repo?.name || '').replace(`${GITHUB_USER}/`, '');
+        const commits = (ev.payload?.commits || []);
+
+        for (const c of commits) {
+          const shortHash = (c.sha || '').slice(0, 7);
+          const dedupKey = `gh-${shortHash}`;
+          if (seenCommitIds.has(dedupKey)) continue; // skip if local watcher already caught it
+          seenCommitIds.add(dedupKey);
+
+          const commit = {
+            hash: shortHash,
+            message: c.message || '',
+            author: c.author?.name || ev.actor?.login || 'unknown',
+            repo: repoName
+          };
+          console.log(`[commit-watcher] 🚀 ${commit.repo} ${commit.hash} ${commit.message} by ${commit.author}`);
           io.emit('new_commit', commit);
         }
       }
 
-      lastCommitHash = currentHash;
+      // Prune seenCommitIds if it gets too large (keep last 500)
+      if (seenCommitIds.size > 500) {
+        const arr = [...seenCommitIds];
+        arr.splice(0, arr.length - 300);
+        seenCommitIds.clear();
+        arr.forEach(id => seenCommitIds.add(id));
+      }
     } catch (e) {
-      // Silently ignore — might be mid-commit
+      // gh CLI might fail if rate-limited or offline — silently retry next cycle
     }
-  }, 5000).unref(); // Poll every 5 seconds
+  }, 30000).unref(); // Poll GitHub every 30 seconds
+
+  console.log(`[commit-watcher] watching local repo + all ${GITHUB_USER} GitHub repos`);
 }
 
 // ─── Start / Stop ─────────────────────────────────────────────────────────────
