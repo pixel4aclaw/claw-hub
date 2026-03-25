@@ -285,6 +285,7 @@ app.post('/api/mail/relay', async (req, res) => {
 // ── Rate limit polling ───────────────────────────────────────────────────────
 
 let rateLimitCache = null;
+function getRateLimitCache() { return rateLimitCache; }
 
 async function pollRateLimits() {
   try {
