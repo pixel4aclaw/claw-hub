@@ -2073,6 +2073,7 @@
   });
 
   socket.on('chat_response', data => {
+    lastThrottleMsg = null; // reset dedup on real response
     hideTyping();
     appendMsg('claw', data.content, Date.now());
     document.getElementById('queue-status').textContent = '';
