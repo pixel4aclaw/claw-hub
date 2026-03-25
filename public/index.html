@@ -2142,6 +2142,14 @@
   socket.on('new_commit', commit => {
     spawnShipIt(commit);
     haptic(20);
+    // Push notification if page is hidden
+    if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+      const repo = commit.repo ? `[${commit.repo}] ` : '';
+      new Notification('🚀 Ship It!', {
+        body: `${repo}${commit.hash} ${commit.message || ''}`.slice(0, 120),
+        tag: 'shipit-' + commit.hash,
+      });
+    }
   });
 
   function spawnShipIt(commit) {
@@ -2309,3 +2317,4 @@
 </script>
 </body>
 </html>
+// Ship It test 1774447958
