@@ -19,7 +19,7 @@ const { fork } = require('child_process');
 const { get, all, insert, run } = require('./db');
 
 const POLL_INTERVAL_MS = 2000;
-const AGENT_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+const AGENT_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes (Pixel 4a needs breathing room)
 const STALE_THRESHOLD_S = 300; // 5 minutes in seconds
 const MAX_RETRIES = 2; // total attempts per queue item
 const BACKOFF_MS = 3000; // pause between retries
