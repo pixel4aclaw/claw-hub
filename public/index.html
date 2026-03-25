@@ -379,19 +379,6 @@
       animation: quipFade 0.4s ease both;
     }
     .typing-quip.active { display: block; }
-    .typing-progress {
-      display: none;
-      font-size: 0.68rem;
-      color: rgba(255,255,255,0.45);
-      font-family: 'SF Mono', 'Fira Code', monospace;
-      line-height: 1.3;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      max-width: 260px;
-      transition: opacity 0.3s ease;
-    }
-    .typing-progress.active { display: block; }
     @keyframes quipFade {
       from { opacity: 0; transform: translateY(4px); }
       to { opacity: 1; transform: translateY(0); }
