@@ -9,6 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="apple-touch-icon" href="/icon-192.png">
   <title>Claw Hub</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -285,6 +286,12 @@
       color: rgba(255,255,255,0.45);
     }
     .msg.user .ts { text-align: right; color: rgba(255,255,255,0.55); }
+    .msg.user.failed {
+      opacity: 0.6;
+      border-color: rgba(239,68,68,0.5);
+      background: rgba(80,20,20,0.55);
+    }
+    .msg.user.failed .ts::after { content: ' · not sent'; color: rgba(239,68,68,0.8); }
     /* Markdown in claw messages */
     .msg.claw .md-body p { margin: 0.3rem 0; }
     .msg.claw .md-body p:first-child { margin-top: 0; }
@@ -810,7 +817,7 @@
       flex-direction: column;
       align-items: center;
       gap: 4px;
-      animation: shipitSlide 30s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+      animation: shipitSlide 8s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     }
     .shipit-emoji {
       font-size: 3.5rem;
@@ -846,9 +853,9 @@
     }
     @keyframes shipitSlide {
       0% { bottom: -120px; opacity: 0; transform: scale(0.5); }
-      5% { bottom: 30vh; opacity: 1; transform: scale(1.1); }
-      8% { bottom: 35vh; transform: scale(1); }
-      85% { bottom: 50vh; opacity: 1; }
+      10% { bottom: 35vh; opacity: 1; transform: scale(1.1); }
+      15% { bottom: 40vh; transform: scale(1); }
+      80% { bottom: 45vh; opacity: 1; }
       100% { bottom: 110vh; opacity: 0; }
     }
     @keyframes shipitWiggle {
@@ -1624,6 +1631,30 @@
     const net = system.network || [];
 
     document.getElementById('status-body').innerHTML = `
+      <details class="how-it-works">
+        <summary>How This Works</summary>
+        <div class="how-body">
+          <p>Every user on Claw Hub gets their own <strong>Claude agent session</strong>. When you send a message, here's what happens:</p>
+          <ol>
+            <li>Your message is added to a <strong>queue</strong> (SQLite via sql.js, in-memory with debounced disk persist).</li>
+            <li>A worker polls the queue every 2 seconds. When it picks up your message, it calls the <strong>Claude Agent SDK</strong> — not the raw chat API.</li>
+            <li>The agent runs with real tools: <code>Bash</code>, <code>Read</code>, <code>Write</code>, <code>Edit</code>, <code>Grep</code>, <code>Glob</code>, <code>WebSearch</code>, and <code>WebFetch</code>. It can actually execute code, modify files, and search the web.</li>
+            <li>Your <strong>session ID</strong> is stored in the database. Next time you send a message, the agent resumes your session with full conversation context — it remembers everything.</li>
+            <li>The response streams back to you via <strong>Socket.io</strong> in real-time.</li>
+          </ol>
+          <p><strong>Architecture:</strong></p>
+          <ul>
+            <li><strong>Server:</strong> Node.js + Express + Socket.io on a Pixel 4a running Termux</li>
+            <li><strong>Database:</strong> sql.js (SQLite compiled to WASM, runs in-process)</li>
+            <li><strong>Agent:</strong> <code>@anthropic-ai/claude-agent-sdk</code> with <code>bypassPermissions</code> mode — each user gets an independent session with up to 30 tool-use turns per message</li>
+            <li><strong>Scaling:</strong> 40 users = 40 independent sessions. No shared context window, no interference. Each session is its own conversation with its own memory.</li>
+            <li><strong>Tunnel:</strong> Cloudflare Tunnel exposes the local server to the internet</li>
+            <li><strong>Process manager:</strong> pm2 keeps the server alive — crash-only design, cold starts are cheap</li>
+          </ul>
+          <p style="color:var(--muted);font-size:0.75rem;margin-top:0.8rem">The AI you're chatting with has the same access as a developer sitting at the terminal. It's not a wrapper around a chat API — it's an agent that can do real work.</p>
+        </div>
+      </details>
+
       <div class="stat-section">
         <h3>Hub Stats</h3>
         <div class="stat-grid">
@@ -1771,29 +1802,6 @@
         </div>
       </div>` : ''}
 
-      <details class="how-it-works">
-        <summary>How This Works</summary>
-        <div class="how-body">
-          <p>Every user on Claw Hub gets their own <strong>Claude agent session</strong>. When you send a message, here's what happens:</p>
-          <ol>
-            <li>Your message is added to a <strong>queue</strong> (SQLite via sql.js, in-memory with debounced disk persist).</li>
-            <li>A worker polls the queue every 2 seconds. When it picks up your message, it calls the <strong>Claude Agent SDK</strong> — not the raw chat API.</li>
-            <li>The agent runs with real tools: <code>Bash</code>, <code>Read</code>, <code>Write</code>, <code>Edit</code>, <code>Grep</code>, <code>Glob</code>, <code>WebSearch</code>, and <code>WebFetch</code>. It can actually execute code, modify files, and search the web.</li>
-            <li>Your <strong>session ID</strong> is stored in the database. Next time you send a message, the agent resumes your session with full conversation context — it remembers everything.</li>
-            <li>The response streams back to you via <strong>Socket.io</strong> in real-time.</li>
-          </ol>
-          <p><strong>Architecture:</strong></p>
-          <ul>
-            <li><strong>Server:</strong> Node.js + Express + Socket.io on a Pixel 4a running Termux</li>
-            <li><strong>Database:</strong> sql.js (SQLite compiled to WASM, runs in-process)</li>
-            <li><strong>Agent:</strong> <code>@anthropic-ai/claude-agent-sdk</code> with <code>bypassPermissions</code> mode — each user gets an independent session with up to 30 tool-use turns per message</li>
-            <li><strong>Scaling:</strong> 40 users = 40 independent sessions. No shared context window, no interference. Each session is its own conversation with its own memory.</li>
-            <li><strong>Tunnel:</strong> Cloudflare Tunnel exposes the local server to the internet</li>
-            <li><strong>Process manager:</strong> pm2 keeps the server alive — crash-only design, cold starts are cheap</li>
-          </ul>
-          <p style="color:var(--muted);font-size:0.75rem;margin-top:0.8rem">The AI you're chatting with has the same access as a developer sitting at the terminal. It's not a wrapper around a chat API — it's an agent that can do real work.</p>
-        </div>
-      </details>
     `;
   }
 
@@ -2153,7 +2161,7 @@
     // Clean up after animation
     toast.addEventListener('animationend', () => toast.remove());
     // Safety net
-    setTimeout(() => toast.remove(), 35000);
+    setTimeout(() => toast.remove(), 10000);
   }
 
   // Restore typing indicator when tab becomes visible again (no disconnect needed)
