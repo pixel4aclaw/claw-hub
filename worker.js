@@ -33,6 +33,9 @@ let alertSent = false;
 let globalRateLimitedUntil = 0;
 function getRateLimitedUntil() { return globalRateLimitedUntil; }
 
+// Quota throttle state — prevent redundant notifications
+let quotaThrottleNotified = false;
+
 const SYSTEM_PROMPT = `You are Claw, the AI at the heart of Claw Hub — a collaborative app where ~40 developers experiment with building AI-powered projects. You live inside the codebase on a Pixel 4a running Termux.
 
 You have full access to the server: Bash, file read/write, code editing, web search. When a user asks you to build something, you build it. When they ask a question, answer directly.
