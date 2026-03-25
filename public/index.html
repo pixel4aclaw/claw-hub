@@ -1578,7 +1578,7 @@
       return;
     }
 
-    appendMsg('user', text, Date.now());
+    const sentMsg = appendMsg('user', text, Date.now());
     showTyping();
     try {
       const res = await fetch('/api/chat', {
@@ -1592,7 +1592,7 @@
       }
     } catch {
       hideTyping();
-      appendMsg('system', 'failed to send');
+      if (sentMsg) sentMsg.classList.add('failed');
     }
     btn.disabled = false;
     input.focus();
