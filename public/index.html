@@ -2107,8 +2107,6 @@
     if (q) q.textContent = 'throttled';
   });
 
-  // Clear throttle dedup flag when a real response arrives
-  socket.on('chat_response', () => { lastThrottleMsg = null; });
 
   // ── Chain-of-thought streaming ──────────────────────────────────
   socket.on('agent_progress', data => {
