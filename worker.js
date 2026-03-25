@@ -267,7 +267,7 @@ async function processNext(io) {
       const reply = await Promise.race([
         callAgent(item.username, item.user_id, msg.content, forceNewSession, onProgress),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Agent timed out after 15 minutes')), AGENT_TIMEOUT_MS)
+          setTimeout(() => reject(new Error('Agent timed out after 30 minutes')), AGENT_TIMEOUT_MS)
         ),
       ]);
       if (!reply) throw new Error('Empty response from agent');
