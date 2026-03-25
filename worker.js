@@ -112,6 +112,7 @@ async function callAgent(username, userId, userMessage, forceNewSession, onProgr
     const child = fork(path.join(__dirname, 'agent-child.js'), [], {
       detached: true,
       stdio: ['pipe', 'inherit', 'inherit', 'ipc'],
+      execArgv: ['--max-old-space-size=256'],
     });
 
     let settled = false;
