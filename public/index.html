@@ -2093,6 +2093,22 @@
     }
   });
 
+  // ── Quota throttle notification ──────────────────────────────────
+  let lastThrottleMsg = null;
+  socket.on('quota_throttled', data => {
+    hideTyping();
+    // Deduplicate — don't show the same throttle message twice in a row
+    if (data.message && data.message !== lastThrottleMsg) {
+      lastThrottleMsg = data.message;
+      appendMsg('system', data.message, Date.now());
+    }
+    const q = document.getElementById('queue-status');
+    if (q) q.textContent = 'throttled';
+  });
+
+  // Clear throttle dedup flag when a real response arrives
+  socket.on('chat_response', () => { lastThrottleMsg = null; });
+
   // ── Chain-of-thought streaming ──────────────────────────────────
   socket.on('agent_progress', data => {
     const progressEl = typingEl.querySelector('.typing-progress');
