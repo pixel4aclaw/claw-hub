@@ -611,14 +611,58 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => console.log(`[-] ${socket.username} disconnected`));
 });
 
+// ── Commit watcher bot ────────────────────────────────────────────────────────
+
+let lastCommitHash = null;
+
+function startCommitWatcher() {
+  // Get initial commit hash
+  try {
+    lastCommitHash = execSync('git rev-parse HEAD', { cwd: __dirname, timeout: 5000 }).toString().trim();
+  } catch (e) {
+    console.error('[commit-watcher] failed to get initial hash:', e.message);
+  }
+
+  setInterval(() => {
+    try {
+      // Fetch latest (pull won't work if there are local changes, so just check log)
+      const currentHash = execSync('git rev-parse HEAD', { cwd: __dirname, timeout: 5000 }).toString().trim();
+
+      if (lastCommitHash && currentHash !== lastCommitHash) {
+        // Get commit info
+        const log = execSync(
+          `git log ${lastCommitHash}..${currentHash} --pretty=format:"%h|%s|%an" --reverse`,
+          { cwd: __dirname, timeout: 5000 }
+        ).toString().trim();
+
+        const commits = log.split('\n').filter(Boolean).map(line => {
+          const [hash, message, author] = line.split('|');
+          return { hash, message, author };
+        });
+
+        for (const commit of commits) {
+          console.log(`[commit-watcher] 🚀 ${commit.hash} ${commit.message} by ${commit.author}`);
+          io.emit('new_commit', commit);
+        }
+      }
+
+      lastCommitHash = currentHash;
+    } catch (e) {
+      // Silently ignore — might be mid-commit
+    }
+  }, 5000).unref(); // Poll every 5 seconds
+}
+
 // ─── Start / Stop ─────────────────────────────────────────────────────────────
 
 async function start(port) {
   await getDb();
   return new Promise(resolve => {
     server.listen(port ?? PORT, '0.0.0.0', () => {
-      if (process.env.NODE_ENV !== 'test')
+      if (process.env.NODE_ENV !== 'test') {
         console.log(`Claw Hub running on http://0.0.0.0:${server.address().port}`);
+        startCommitWatcher();
+      }
       startWorker(io);
       resolve(server);
     });

@@ -337,7 +337,7 @@
       padding: 0.55rem 0.85rem;
       gap: 6px;
       animation: msgIn 0.2s ease both;
-      max-width: 280px;
+      max-width: 340px;
     }
     #typing-indicator.visible { display: flex; }
     .typing-dots {
@@ -366,6 +366,19 @@
       animation: quipFade 0.4s ease both;
     }
     .typing-quip.active { display: block; }
+    .typing-progress {
+      display: none;
+      font-size: 0.68rem;
+      color: rgba(255,255,255,0.45);
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 260px;
+      transition: opacity 0.3s ease;
+    }
+    .typing-progress.active { display: block; }
     @keyframes quipFade {
       from { opacity: 0; transform: translateY(4px); }
       to { opacity: 1; transform: translateY(0); }
@@ -782,6 +795,59 @@
       .nav-item:active { transform: scale(0.85); }
     }
 
+    /* ── Ship It! commit overlay (Twitch-style) ────────────────────── */
+    .shipit-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      overflow: hidden;
+    }
+    .shipit-toast {
+      position: absolute;
+      bottom: -120px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      animation: shipitSlide 3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    }
+    .shipit-emoji {
+      font-size: 3.5rem;
+      filter: drop-shadow(0 0 20px rgba(124,58,237,0.6));
+      animation: shipitWiggle 0.4s ease-in-out infinite alternate;
+    }
+    .shipit-label {
+      font-size: 0.85rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+      color: #fff;
+      text-shadow: 0 0 10px rgba(124,58,237,0.8), 0 0 30px rgba(124,58,237,0.4);
+      white-space: nowrap;
+    }
+    .shipit-msg {
+      font-size: 0.65rem;
+      color: var(--muted);
+      max-width: 200px;
+      text-align: center;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+    }
+    @keyframes shipitSlide {
+      0% { bottom: -120px; opacity: 0; transform: scale(0.5); }
+      15% { opacity: 1; transform: scale(1.1); }
+      25% { transform: scale(1); }
+      70% { opacity: 1; }
+      100% { bottom: 110vh; opacity: 0; }
+    }
+    @keyframes shipitWiggle {
+      from { transform: rotate(-8deg); }
+      to { transform: rotate(8deg); }
+    }
+
     /* ── Skeleton loading ────────────────────────────────────────────── */
     @keyframes shimmer {
       0% { background-position: -200% 0; }
@@ -918,6 +984,7 @@
   </style>
 </head>
 <body>
+<div class="shipit-overlay" id="shipit-overlay"></div>
 <div id="copy-toast">copied ✓</div>
 <div id="app">
 
@@ -993,6 +1060,7 @@
               <div class="typing-dot"></div>
             </div>
             <span class="typing-quip"></span>
+            <span class="typing-progress"></span>
           </div>
         </div>
         <button id="scroll-fab" onclick="scrollToBottom()" title="Scroll to bottom">↓</button>
@@ -2018,6 +2086,39 @@
       updateBlogBadge();
     }
   });
+
+  // ── Ship It! commit watcher ──────────────────────────────────────
+  socket.on('new_commit', commit => {
+    spawnShipIt(commit);
+    haptic(20);
+  });
+
+  function spawnShipIt(commit) {
+    const overlay = document.getElementById('shipit-overlay');
+    const toast = document.createElement('div');
+    toast.className = 'shipit-toast';
+    // Random horizontal position
+    const x = 10 + Math.random() * 70;
+    toast.style.left = x + '%';
+    // Slight random delay for multiple commits
+    toast.style.animationDelay = (Math.random() * 0.3) + 's';
+
+    const emojis = ['🚀', '🚢', '📦', '🎉', '⚡', '🔥'];
+    const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+
+    toast.innerHTML = `
+      <div class="shipit-emoji">${emoji}</div>
+      <div class="shipit-label">SHIP IT!</div>
+      <div class="shipit-msg">${esc(commit.hash || '')} ${esc((commit.message || '').slice(0, 50))}</div>
+    `;
+
+    overlay.appendChild(toast);
+
+    // Clean up after animation
+    toast.addEventListener('animationend', () => toast.remove());
+    // Safety net
+    setTimeout(() => toast.remove(), 4000);
+  }
 
   // Restore typing indicator when tab becomes visible again (no disconnect needed)
   document.addEventListener('visibilitychange', async () => {

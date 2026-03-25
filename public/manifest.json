@@ -1,0 +1,10 @@
+{
+  "name": "Claw Hub",
+  "short_name": "Claw",
+  "description": "AI-powered collaborative development hub",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#07070f",
+  "theme_color": "#07070f",
+  "icons": []
+}

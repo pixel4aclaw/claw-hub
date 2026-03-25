@@ -79,7 +79,7 @@ function parseRateLimitReset(msg) {
  * agent-child.js with detached:true, the SDK and its subprocess live in their
  * own process group — signals can't reach the server.
  */
-async function callAgent(username, userId, userMessage, forceNewSession) {
+async function callAgent(username, userId, userMessage, forceNewSession, onProgress) {
   const user = get('SELECT session_id FROM users WHERE id = ?', [userId]);
   const existingSessionId = forceNewSession ? null : user?.session_id;
 
@@ -117,6 +117,12 @@ async function callAgent(username, userId, userMessage, forceNewSession) {
     let settled = false;
 
     child.on('message', (msg) => {
+      // Forward progress messages without settling
+      if (msg.progress) {
+        if (onProgress) onProgress(msg);
+        return;
+      }
+
       if (settled) return;
       settled = true;
 
@@ -235,8 +241,29 @@ async function processNext(io) {
         console.log(`[queue] item ${item.id} retry ${attempt}/${MAX_RETRIES} (fresh session)`);
       }
 
+      // Progress callback — stream chain-of-thought to user's socket
+      const onProgress = (prog) => {
+        let status = '';
+        if (prog.kind === 'tool') {
+          const toolNames = { Bash: '💻', Read: '📖', Edit: '✏️', Write: '📝', Grep: '🔍', Glob: '📂', WebSearch: '🌐', WebFetch: '🌐' };
+          const icon = toolNames[prog.tool] || '🔧';
+          status = `${icon} ${prog.tool}${prog.input ? ': ' + prog.input : ''}`;
+        } else if (prog.kind === 'thinking') {
+          status = `💭 ${prog.preview}`;
+        } else if (prog.kind === 'text') {
+          status = `✍️ writing response…`;
+        } else if (prog.kind === 'tool_running') {
+          status = `⏳ ${prog.tool} (${Math.round(prog.elapsed)}s)`;
+        } else if (prog.kind === 'summary') {
+          status = `📋 ${prog.text}`;
+        }
+        if (status) {
+          io.to(`user:${item.username}`).emit('agent_progress', { status: status.slice(0, 140) });
+        }
+      };
+
       const reply = await Promise.race([
-        callAgent(item.username, item.user_id, msg.content, forceNewSession),
+        callAgent(item.username, item.user_id, msg.content, forceNewSession, onProgress),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Agent timed out after 5 minutes')), AGENT_TIMEOUT_MS)
         ),

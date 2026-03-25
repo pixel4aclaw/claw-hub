@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#07070f">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <title>Weather · Claw Hub</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg:      #07070f;
+      --bg2:     #0a0a14;
+      --bg3:     #0d0d1a;
+      --border:  #141422;
+      --border2: #1e1e30;
+      --text:    #d0d0e0;
+      --muted:   #555570;
+      --accent:  #7c3aed;
+      --accent2: #3b82f6;
+      --green:   #22c55e;
+      --orange:  #f59e0b;
+      --red:     #ef4444;
+    }
+    html, body {
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    /* ── Header ──────────────────────────────── */
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg2);
+    }
+    .header-left { display: flex; align-items: center; gap: 0.75rem; }
+    .header-logo {
+      font-size: 0.9rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-decoration: none;
+    }
+    .header h1 { font-size: 1.1rem; font-weight: 600; }
+    .header-right { display: flex; align-items: center; gap: 1rem; font-size: 0.75rem; color: var(--muted); }
+    .refresh-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--green);
+      display: inline-block;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+    .back-link {
+      color: var(--accent);
+      text-decoration: none;
+      font-size: 0.8rem;
+      opacity: 0.8;
+      transition: opacity 0.2s;
+    }
+    .back-link:hover { opacity: 1; }
+
+    /* ── Container ────────────────────────────── */
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.5rem;
+    }
+
+    /* ── Current Weather Card ─────────────────── */
+    .current-weather {
+      display: flex;
+      align-items: center;
+      gap: 2rem;
+      padding: 1.5rem;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+    }
+    .current-temp {
+      font-size: 3.5rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--accent2), var(--green));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      line-height: 1;
+    }
+    .current-icon { font-size: 3rem; }
+    .current-details { flex: 1; }
+    .current-details h2 { font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem; }
+    .current-details p { font-size: 0.8rem; color: var(--muted); line-height: 1.6; }
+
+    /* ── Forecast Cards Row ───────────────────── */
+    .forecast-cards {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 1.5rem;
+    }
+    .day-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      text-align: center;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .day-card:hover {
+      border-color: var(--border2);
+      transform: translateY(-2px);
+    }
+    .day-card .day-name { font-size: 0.75rem; color: var(--muted); margin-bottom: 0.4rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .day-card .day-icon { font-size: 1.8rem; margin-bottom: 0.4rem; }
+    .day-card .day-temps { font-size: 0.85rem; font-weight: 600; }
+    .day-card .day-temps .hi { color: var(--orange); }
+    .day-card .day-temps .lo { color: var(--accent2); }
+    .day-card .day-desc { font-size: 0.7rem; color: var(--muted); margin-top: 0.3rem; }
+    .day-card .day-precip { font-size: 0.65rem; color: var(--accent2); margin-top: 0.2rem; }
+
+    /* ── Chart Cards ──────────────────────────── */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .chart-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem 1rem 0.75rem;
+    }
+    .chart-card.full-width {
+      grid-column: 1 / -1;
+    }
+    .chart-card h3 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .chart-card canvas { width: 100% !important; }
+
+    /* ── Loading / Error ──────────────────────── */
+    .loading {
+      text-align: center;
+      padding: 4rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .loading .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-banner {
+      background: rgba(239,68,68,0.1);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 8px;
+      padding: 1rem;
+      color: var(--red);
+      text-align: center;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+    }
+
+    /* ── Responsive ───────────────────────────── */
+    @media (max-width: 768px) {
+      .container { padding: 1rem; }
+      .forecast-cards { grid-template-columns: repeat(5, 1fr); gap: 0.4rem; }
+      .day-card { padding: 0.6rem 0.3rem; }
+      .day-card .day-icon { font-size: 1.3rem; }
+      .chart-grid { grid-template-columns: 1fr; }
+      .current-weather { flex-wrap: wrap; gap: 1rem; }
+      .current-temp { font-size: 2.5rem; }
+    }
+    @media (max-width: 480px) {
+      .forecast-cards { grid-template-columns: repeat(3, 1fr); }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div class="header-left">
+      <a href="/" class="header-logo">🐾 Claw Hub</a>
+      <h1>☁️ SF Weather</h1>
+    </div>
+    <div class="header-right">
+      <span id="lastUpdated">Loading...</span>
+      <span class="refresh-dot" id="refreshDot"></span>
+      <a href="/" class="back-link">← Back to Hub</a>
+    </div>
+  </div>
+
+  <div class="container">
+    <div id="content">
+      <div class="loading">
+        <div class="spinner"></div>
+        Fetching weather data for San Francisco...
+      </div>
+    </div>
+  </div>
+
+<script>
+const SF_LAT = 37.7749;
+const SF_LON = -122.4194;
+const REFRESH_MS = 60 * 60 * 1000; // 1 hour
+
+// Weather code → emoji + description
+const WMO = {
+  0:  ['☀️', 'Clear sky'],
+  1:  ['🌤️', 'Mainly clear'],
+  2:  ['⛅', 'Partly cloudy'],
+  3:  ['☁️', 'Overcast'],
+  45: ['🌫️', 'Fog'],
+  48: ['🌫️', 'Rime fog'],
+  51: ['🌦️', 'Light drizzle'],
+  53: ['🌦️', 'Drizzle'],
+  55: ['🌧️', 'Dense drizzle'],
+  61: ['🌧️', 'Light rain'],
+  63: ['🌧️', 'Rain'],
+  65: ['🌧️', 'Heavy rain'],
+  71: ['🌨️', 'Light snow'],
+  73: ['🌨️', 'Snow'],
+  75: ['❄️', 'Heavy snow'],
+  80: ['🌦️', 'Light showers'],
+  81: ['🌧️', 'Showers'],
+  82: ['⛈️', 'Heavy showers'],
+  95: ['⛈️', 'Thunderstorm'],
+  96: ['⛈️', 'Thunderstorm + hail'],
+  99: ['⛈️', 'Severe thunderstorm'],
+};
+
+function wmo(code) {
+  return WMO[code] || ['🌡️', `Code ${code}`];
+}
+
+const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+let charts = {};
+
+async function fetchWeather() {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${SF_LAT}&longitude=${SF_LON}`
+    + `&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,wind_speed_10m,wind_gusts_10m`
+    + `&hourly=temperature_2m,precipitation_probability,precipitation,wind_speed_10m,relative_humidity_2m,weather_code`
+    + `&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset`
+    + `&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=inch`
+    + `&timezone=America%2FLos_Angeles&forecast_days=5`;
+
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  return res.json();
+}
+
+function renderDashboard(data) {
+  const { current, daily, hourly } = data;
+  const [icon, desc] = wmo(current.weather_code);
+
+  const content = document.getElementById('content');
+  content.innerHTML = `
+    <div class="current-weather">
+      <div class="current-icon">${icon}</div>
+      <div class="current-temp">${Math.round(current.temperature_2m)}°F</div>
+      <div class="current-details">
+        <h2>San Francisco, CA</h2>
+        <p>
+          ${desc} · Feels like ${Math.round(current.apparent_temperature)}°F<br>
+          Humidity ${current.relative_humidity_2m}% · Wind ${Math.round(current.wind_speed_10m)} mph (gusts ${Math.round(current.wind_gusts_10m)} mph)
+        </p>
+      </div>
+    </div>
+
+    <div class="forecast-cards" id="forecastCards"></div>
+
+    <div class="chart-grid">
+      <div class="chart-card full-width">
+        <h3>🌡️ Hourly Temperature (5 Days)</h3>
+        <canvas id="chartTemp" height="80"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>🌧️ Precipitation Probability</h3>
+        <canvas id="chartPrecip" height="100"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3>💨 Wind Speed</h3>
+        <canvas id="chartWind" height="100"></canvas>
+      </div>
+      <div class="chart-card full-width">
+        <h3>💧 Humidity</h3>
+        <canvas id="chartHumidity" height="60"></canvas>
+      </div>
+    </div>
+  `;
+
+  // Forecast cards
+  const cardsEl = document.getElementById('forecastCards');
+  for (let i = 0; i < daily.time.length; i++) {
+    const d = new Date(daily.time[i] + 'T12:00:00');
+    const [dIcon, dDesc] = wmo(daily.weather_code[i]);
+    const isToday = i === 0;
+    cardsEl.innerHTML += `
+      <div class="day-card" style="${isToday ? 'border-color: var(--accent);' : ''}">
+        <div class="day-name">${isToday ? 'Today' : dayNames[d.getDay()]}</div>
+        <div class="day-icon">${dIcon}</div>
+        <div class="day-temps">
+          <span class="hi">${Math.round(daily.temperature_2m_max[i])}°</span>
+          <span class="lo">${Math.round(daily.temperature_2m_min[i])}°</span>
+        </div>
+        <div class="day-desc">${dDesc}</div>
+        <div class="day-precip">${daily.precipitation_probability_max[i]}% rain · ${daily.precipitation_sum[i].toFixed(2)}"</div>
+      </div>
+    `;
+  }
+
+  // Chart defaults
+  Chart.defaults.color = '#555570';
+  Chart.defaults.borderColor = '#141422';
+  Chart.defaults.font.size = 11;
+  Chart.defaults.font.family = '-apple-system, BlinkMacSystemFont, sans-serif';
+
+  const chartOpts = (yLabel) => ({
+    responsive: true,
+    maintainAspectRatio: true,
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { display: false } },
+    scales: {
+      x: {
+        ticks: { maxTicksLimit: 20, maxRotation: 0 },
+        grid: { color: 'rgba(20,20,34,0.6)' }
+      },
+      y: {
+        title: { display: true, text: yLabel, color: '#555570' },
+        grid: { color: 'rgba(20,20,34,0.6)' }
+      }
+    }
+  });
+
+  // Format hourly labels: "Mon 3pm"
+  const labels = hourly.time.map(t => {
+    const d = new Date(t);
+    const day = dayNames[d.getDay()];
+    let h = d.getHours();
+    const ampm = h >= 12 ? 'p' : 'a';
+    h = h % 12 || 12;
+    return `${day} ${h}${ampm}`;
+  });
+
+  // Destroy old charts
+  Object.values(charts).forEach(c => c.destroy());
+
+  // Temperature chart
+  charts.temp = new Chart(document.getElementById('chartTemp'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: hourly.temperature_2m,
+        borderColor: '#f59e0b',
+        backgroundColor: 'rgba(245,158,11,0.08)',
+        fill: true,
+        tension: 0.35,
+        pointRadius: 0,
+        borderWidth: 2,
+      }]
+    },
+    options: chartOpts('°F')
+  });
+
+  // Precipitation chart
+  charts.precip = new Chart(document.getElementById('chartPrecip'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        data: hourly.precipitation_probability,
+        backgroundColor: 'rgba(59,130,246,0.5)',
+        borderColor: '#3b82f6',
+        borderWidth: 1,
+        borderRadius: 2,
+      }]
+    },
+    options: chartOpts('% chance')
+  });
+
+  // Wind chart
+  charts.wind = new Chart(document.getElementById('chartWind'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: hourly.wind_speed_10m,
+        borderColor: '#22c55e',
+        backgroundColor: 'rgba(34,197,94,0.08)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+        borderWidth: 2,
+      }]
+    },
+    options: chartOpts('mph')
+  });
+
+  // Humidity chart
+  charts.humidity = new Chart(document.getElementById('chartHumidity'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: hourly.relative_humidity_2m,
+        borderColor: '#7c3aed',
+        backgroundColor: 'rgba(124,58,237,0.08)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+        borderWidth: 2,
+      }]
+    },
+    options: chartOpts('%')
+  });
+}
+
+function updateTimestamp() {
+  const now = new Date();
+  const h = now.getHours() % 12 || 12;
+  const m = String(now.getMinutes()).padStart(2, '0');
+  const ampm = now.getHours() >= 12 ? 'PM' : 'AM';
+  document.getElementById('lastUpdated').textContent = `Updated ${monthNames[now.getMonth()]} ${now.getDate()} at ${h}:${m} ${ampm}`;
+}
+
+async function refresh() {
+  try {
+    const data = await fetchWeather();
+    renderDashboard(data);
+    updateTimestamp();
+    document.getElementById('refreshDot').style.background = 'var(--green)';
+  } catch (err) {
+    console.error('Weather fetch failed:', err);
+    document.getElementById('refreshDot').style.background = 'var(--red)';
+    const content = document.getElementById('content');
+    // Only show error if we haven't loaded data yet
+    if (!content.querySelector('.current-weather')) {
+      content.innerHTML = `<div class="error-banner">Failed to load weather data: ${err.message}. Retrying in 1 hour.</div>`;
+    }
+  }
+}
+
+// Initial load + hourly refresh
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>

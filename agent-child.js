@@ -41,6 +41,27 @@ process.on('message', async (task) => {
           rateLimitInfo = info;
         }
       }
+
+      // Stream chain-of-thought progress to parent (no extra tokens used)
+      try {
+        if (message.type === 'assistant' && message.message?.content) {
+          // Extract what the agent is doing from content blocks
+          for (const block of message.message.content) {
+            if (block.type === 'tool_use') {
+              process.send({ progress: true, kind: 'tool', tool: block.name, input: (block.input?.command || block.input?.pattern || block.input?.file_path || block.input?.query || '').slice(0, 120) });
+            } else if (block.type === 'text' && block.text) {
+              // Send first 120 chars of text as a peek
+              process.send({ progress: true, kind: 'text', preview: block.text.slice(0, 120) });
+            } else if (block.type === 'thinking' && block.thinking) {
+              process.send({ progress: true, kind: 'thinking', preview: block.thinking.slice(0, 120) });
+            }
+          }
+        } else if (message.type === 'tool_use_summary') {
+          process.send({ progress: true, kind: 'summary', text: (message.summary || '').slice(0, 120) });
+        } else if (message.type === 'tool_progress') {
+          process.send({ progress: true, kind: 'tool_running', tool: message.tool_name, elapsed: message.elapsed_time_seconds });
+        }
+      } catch (_) { /* IPC send can fail if parent disconnected — ignore */ }
     }
 
     process.send({ ok: true, result, newSessionId, rateLimitInfo });
