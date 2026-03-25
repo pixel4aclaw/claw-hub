@@ -498,8 +498,26 @@ app.get('/api/status', async (req, res) => {
       queue_done: queueDone,
     },
     rateLimit: rateLimitCache,
+    git: getGitActivity(),
   });
 });
+
+function getGitActivity() {
+  try {
+    const log = execSync(
+      'git log --all -15 --pretty=format:"%h|%s|%an|%ar" --no-merges',
+      { cwd: __dirname, timeout: 5000 }
+    ).toString().trim();
+    if (!log) return { commits: [], branch: null, totalCommits: 0 };
+    const commits = log.split('\n').filter(Boolean).map(line => {
+      const [hash, message, author, ago] = line.split('|');
+      return { hash, message, author, ago };
+    });
+    const branch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: __dirname, timeout: 3000 }).toString().trim();
+    const totalRaw = execSync('git rev-list --count HEAD', { cwd: __dirname, timeout: 3000 }).toString().trim();
+    return { commits, branch, totalCommits: parseInt(totalRaw) || 0 };
+  } catch { return { commits: [], branch: null, totalCommits: 0 }; }
+}
 
 // ── Repos ─────────────────────────────────────────────────────────────────────
 

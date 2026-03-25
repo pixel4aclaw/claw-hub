@@ -1753,6 +1753,24 @@
         <div style="font-size:0.62rem;color:#2a2a40;margin-top:0.4rem">polled ${rl.polled_at ? new Date(rl.polled_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : '—'} · updates every 10m</div>
       </div>` : ''}
 
+      ${data.git && data.git.commits.length ? `
+      <div class="stat-section">
+        <h3>🔀 Git Activity</h3>
+        <div class="stat-grid">
+          <div class="stat-card"><div class="label">Branch</div><div class="value" style="font-size:1rem;font-family:monospace">${esc(data.git.branch || '—')}</div></div>
+          <div class="stat-card"><div class="label">Total Commits</div><div class="value">${data.git.totalCommits}</div></div>
+        </div>
+        <div style="margin-top:0.6rem">
+          ${data.git.commits.slice(0, 10).map(c => `
+            <div style="display:flex;gap:8px;align-items:baseline;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.04);font-size:0.75rem">
+              <code style="color:#a78bfa;flex-shrink:0">${esc(c.hash)}</code>
+              <span style="color:rgba(255,255,255,0.7);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.message)}</span>
+              <span style="color:rgba(255,255,255,0.3);flex-shrink:0;font-size:0.65rem">${esc(c.ago)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>` : ''}
+
       <details class="how-it-works">
         <summary>How This Works</summary>
         <div class="how-body">
