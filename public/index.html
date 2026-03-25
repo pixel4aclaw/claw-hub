@@ -550,6 +550,52 @@
     .repo-card .repo-links a:hover { text-decoration: underline; }
     .repo-card .repo-meta { font-size: 0.65rem; color: #2a2a40; margin-top: 0.4rem; }
 
+    /* ── Users panel ─────────────────────────────────────────────────── */
+    .user-list { display: flex; flex-direction: column; gap: 0.6rem; }
+    .user-card {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      transition: transform 0.15s, border-color 0.2s;
+    }
+    .user-card:active { transform: scale(0.985); }
+    @media (hover: hover) { .user-card:hover { border-color: var(--border2); } }
+    .user-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.85rem; font-weight: 700; color: white;
+      flex-shrink: 0; text-transform: uppercase;
+    }
+    .user-card.is-claw .user-avatar {
+      background: linear-gradient(135deg, var(--green), #059669);
+    }
+    .user-info { flex: 1; min-width: 0; }
+    .user-name {
+      font-size: 0.88rem; font-weight: 600; color: var(--text);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .user-name .you-badge {
+      font-size: 0.58rem; color: var(--accent); font-weight: 500;
+      margin-left: 0.4rem; vertical-align: middle;
+    }
+    .user-meta { font-size: 0.68rem; color: var(--muted); margin-top: 0.15rem; }
+    .user-stats {
+      font-size: 0.7rem; color: var(--muted); text-align: right; flex-shrink: 0;
+    }
+    .user-stats .count { font-size: 1rem; font-weight: 700; color: var(--text); display: block; }
+    .presence-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      border: 1.5px solid var(--bg3);
+    }
+    .presence-dot.online  { background: var(--green); box-shadow: 0 0 4px rgba(34,197,94,0.5); }
+    .presence-dot.recent  { background: #555570; }
+    .presence-dot.offline { display: none; }
+
     /* ── Blog panel ──────────────────────────────────────────────────── */
     .blog-list { display: flex; flex-direction: column; gap: 0.75rem; }
     .blog-card {
@@ -897,6 +943,9 @@
       <div class="nav-item" data-panel="repos" onclick="showPanel('repos')">
         <span class="icon">📦</span><span>Projects</span>
       </div>
+      <div class="nav-item" data-panel="users" onclick="showPanel('users')">
+        <span class="icon">👥</span><span>Users</span>
+      </div>
       <div class="nav-item" data-panel="blog" onclick="showPanel('blog')">
         <span class="icon">✍️</span><span>Blog</span>
         <span class="badge" id="blog-badge" style="display:none"></span>
@@ -982,6 +1031,20 @@
         </div>
       </div>
 
+      <!-- Users panel -->
+      <div class="panel" id="panel-users">
+        <div class="panel-header">
+          <h2>👥 Users</h2>
+          <span class="sub" id="user-count"></span>
+        </div>
+        <div class="panel-body">
+          <div class="user-list" id="user-list">
+            <div class="skeleton-card"><div class="skeleton"></div><div class="skeleton short"></div></div>
+            <div class="skeleton-card"><div class="skeleton"></div><div class="skeleton short"></div></div>
+          </div>
+        </div>
+      </div>
+
       <!-- Blog panel -->
       <div class="panel" id="panel-blog">
         <div class="panel-header">
@@ -1024,7 +1087,7 @@
   const msgBox = document.getElementById('messages');
   const typingEl = document.getElementById('typing-indicator');
 
-  const PANELS = ['chat', 'build', 'status', 'repos', 'blog'];
+  const PANELS = ['chat', 'build', 'status', 'repos', 'users', 'blog'];
   let currentPanelIdx = 0;
 
   function panelFromHash() {
@@ -1108,6 +1171,7 @@
 
     if (name === 'status') loadStatus();
     if (name === 'repos')  loadRepos();
+    if (name === 'users')  loadUsers();
     if (name === 'blog')   { loadBlog(); newBlogSinceView = 0; updateBlogBadge(); }
     if (name === 'chat')   { scrollToBottom(false); document.getElementById('chat-input').focus(); }
   }
@@ -1669,6 +1733,44 @@
     el.querySelectorAll('.repo-card').forEach(c => c.addEventListener('pointerdown', e => ripple(c, e)));
   }
 
+  // ── Users ─────────────────────────────────────────────────────────
+  async function loadUsers() {
+    const users = await fetch('/api/users').then(r => r.json()).catch(() => []);
+    renderUsers(users);
+  }
+
+  function renderUsers(users) {
+    const el = document.getElementById('user-list');
+    document.getElementById('user-count').textContent = `${users.length} user${users.length !== 1 ? 's' : ''}`;
+    if (!users.length) {
+      el.innerHTML = '<div class="empty-state"><div class="icon">👥</div>No users yet.</div>';
+      return;
+    }
+    const nowSec = Math.floor(Date.now() / 1000);
+    el.innerHTML = users.map(u => {
+      const isClaw = u.username === 'claw';
+      const isMe = me && u.username === me.username;
+      const initial = isClaw ? '✦' : u.username.charAt(0);
+      const age = u.last_seen_at ? (nowSec - u.last_seen_at) : Infinity;
+      const presenceClass = age < 300 ? 'online' : age < 1800 ? 'recent' : 'offline';
+      const presenceTip = age < 300 ? 'active now' : age < 1800 ? `active ${reltime(u.last_seen_at)}` : '';
+      return `
+        <div class="user-card${isClaw ? ' is-claw' : ''}">
+          <div class="user-avatar">${initial}</div>
+          <div class="user-info">
+            <div class="user-name">${esc(u.username)}${isMe ? '<span class="you-badge">(you)</span>' : ''}${isClaw ? '<span class="you-badge" style="color:var(--green)">AI</span>' : ''}</div>
+            <div class="user-meta">${presenceTip || 'joined ' + reltime(u.created_at)}</div>
+          </div>
+          <div class="user-stats">
+            <span class="count">${u.message_count || 0}</span>
+            messages
+          </div>
+          <div class="presence-dot ${presenceClass}" title="${presenceTip}"></div>
+        </div>
+      `;
+    }).join('');
+  }
+
   // ── Blog ──────────────────────────────────────────────────────────
   async function loadBlog(silent = false) {
     const posts = await fetch('/api/blog').then(r => r.json()).catch(() => []);
@@ -1898,6 +2000,10 @@
       appendMsg('claw', prefix + data.body, data.created_at || Date.now());
       haptic(15);
     }
+  });
+
+  socket.on('presence_update', () => {
+    if (currentPanelIdx === PANELS.indexOf('users')) loadUsers();
   });
 
   socket.on('new_repo', () => {

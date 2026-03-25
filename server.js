@@ -120,7 +120,7 @@ app.get('/api/me', async (req, res) => {
 app.get('/api/users', async (req, res) => {
   await getDb();
   const users = all(`
-    SELECT u.id, u.username, u.created_at,
+    SELECT u.id, u.username, u.created_at, u.last_seen_at,
            (SELECT COUNT(*) FROM messages WHERE user_id = u.id AND role = 'user') as message_count
     FROM users u
     ORDER BY u.created_at ASC
@@ -148,6 +148,8 @@ app.post('/api/chat', async (req, res) => {
   await getDb();
   const user = get('SELECT id FROM users WHERE username = ?', [req.user]);
   if (!user) return res.status(404).json({ error: 'user not found' });
+
+  run(`UPDATE users SET last_seen_at = strftime('%s','now') WHERE id = ?`, [user.id]);
 
   const msgId = insert(
     'INSERT INTO messages (user_id, role, content) VALUES (?,?,?)',
@@ -600,6 +602,10 @@ io.on('connection', (socket) => {
   console.log(`[+] ${socket.username} connected (${socket.id})`);
   socket.join(`user:${socket.username}`);
   socket.emit('welcome', { message: 'Connected to Claw Hub', username: socket.username });
+
+  // Track presence — update last_seen_at on connect
+  run(`UPDATE users SET last_seen_at = strftime('%s','now') WHERE username = ?`, [socket.username]);
+  io.emit('presence_update', { username: socket.username, last_seen_at: Math.floor(Date.now() / 1000) });
 
   socket.on('ping', () => socket.emit('pong', { time: Date.now() }));
   socket.on('disconnect', () => console.log(`[-] ${socket.username} disconnected`));

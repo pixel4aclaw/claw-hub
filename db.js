@@ -43,6 +43,7 @@ function initSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT UNIQUE NOT NULL COLLATE NOCASE,
       session_id TEXT,
+      last_seen_at INTEGER,
       created_at INTEGER NOT NULL DEFAULT (strftime('%s','now'))
     );
 
@@ -128,6 +129,8 @@ function migrate() {
     try { db.run(`ALTER TABLE users ADD COLUMN session_id TEXT`); } catch (_) {}
     // Add blocked_until to queue so rate-limited items stay parked until reset
     try { db.run(`ALTER TABLE queue ADD COLUMN blocked_until INTEGER`); } catch (_) {}
+    // Add last_seen_at for online presence tracking
+    try { db.run(`ALTER TABLE users ADD COLUMN last_seen_at INTEGER`); } catch (_) {}
     persist();
   } catch (e) {
     console.error('[db] migration error:', e.message);
