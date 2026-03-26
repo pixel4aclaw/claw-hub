@@ -2026,9 +2026,11 @@
       // Resync messages in case any arrived while offline
       const history = await fetch('/api/messages').then(r => r.json()).catch(() => null);
       if (history?.length) {
-        const rendered = msgBox.querySelectorAll('.msg:not(.system)').length;
-        const newMsgs = history.slice(rendered);
-        newMsgs.forEach(m => appendMsg(m.role === 'user' ? 'user' : 'claw', m.content, m.created_at, false, true));
+        const newMsgs = history.filter(m => m.created_at > lastMsgTs);
+        newMsgs.forEach(m => {
+          lastMsgTs = Math.max(lastMsgTs, m.created_at);
+          appendMsg(m.role === 'user' ? 'user' : 'claw', m.content, m.created_at, false, true);
+        });
         if (newMsgs.length) {
           appendMsg('system', '↑ messages synced after reconnect', null, true);
         }
