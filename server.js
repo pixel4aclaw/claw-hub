@@ -306,6 +306,11 @@ app.post('/api/mail/relay', async (req, res) => {
 let rateLimitCache = null;
 function getRateLimitCache() { return rateLimitCache; }
 
+// Cache for expensive /api/status fields (disk, thermal, git, db counts)
+let statusSlowCache = null;
+let statusSlowCacheAt = 0;
+const STATUS_SLOW_TTL_MS = 30000; // 30 seconds
+
 async function pollRateLimits() {
   try {
     const credPath = path.join(os.homedir(), '.claude', '.credentials.json');
