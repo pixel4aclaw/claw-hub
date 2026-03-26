@@ -419,47 +419,46 @@ function getOpenFds() {
 app.get('/api/status', async (req, res) => {
   await getDb();
 
+  // ── Live fields (cheap, always fresh) ──────────────────────────────────────
   const totalMem = os.totalmem();
   const freeMem = os.freemem();
   const usedMem = totalMem - freeMem;
-
-  // Android thermal zones
-  const temps = [];
-  for (let i = 0; i < 10; i++) {
-    const t = readSys(`/sys/class/thermal/thermal_zone${i}/temp`, v => Math.round(parseInt(v) / 1000));
-    if (t !== null && t > 0 && t < 150) temps.push(t);
-  }
-
-  const battery = {
-    capacity: readSys('/sys/class/power_supply/battery/capacity', v => parseInt(v)),
-    status: readSys('/sys/class/power_supply/battery/status'),
-  };
-
-  // V8 heap stats
   const heap = v8.getHeapStatistics();
   const procMem = process.memoryUsage();
   const cpuUsage = process.cpuUsage();
-
-  // Process I/O
   const procIo = readProcSelfIo();
-
-  // Disk
-  const disk = getDiskUsage();
-
-  // Network
-  const network = getNetworkInfo();
-
-  // Open file descriptors
   const openFds = getOpenFds();
-
-  // DB stats
-  const userCount = (get('SELECT COUNT(*) as c FROM users') || {}).c || 0;
-  const msgCount  = (get('SELECT COUNT(*) as c FROM messages WHERE role = ?', ['user']) || {}).c || 0;
-  const repoCount = (get('SELECT COUNT(*) as c FROM repos') || {}).c || 0;
-  const postCount = (get('SELECT COUNT(*) as c FROM blog_posts') || {}).c || 0;
   const queuePending = (get("SELECT COUNT(*) as c FROM queue WHERE status IN ('pending','processing')") || {}).c || 0;
   const queueDone = (get("SELECT COUNT(*) as c FROM queue WHERE status = 'done'") || {}).c || 0;
-  const mailCount = (get('SELECT COUNT(*) as c FROM mail') || {}).c || 0;
+
+  // ── Slow fields (expensive I/O + git + db counts, cached 30s) ──────────────
+  const now = Date.now();
+  if (!statusSlowCache || now - statusSlowCacheAt > STATUS_SLOW_TTL_MS) {
+    const temps = [];
+    for (let i = 0; i < 10; i++) {
+      const t = readSys(`/sys/class/thermal/thermal_zone${i}/temp`, v => Math.round(parseInt(v) / 1000));
+      if (t !== null && t > 0 && t < 150) temps.push(t);
+    }
+    statusSlowCache = {
+      disk: getDiskUsage(),
+      network: getNetworkInfo(),
+      temps_c: temps,
+      battery: {
+        capacity: readSys('/sys/class/power_supply/battery/capacity', v => parseInt(v)),
+        status: readSys('/sys/class/power_supply/battery/status'),
+      },
+      stats: {
+        users:      (get('SELECT COUNT(*) as c FROM users') || {}).c || 0,
+        messages:   (get('SELECT COUNT(*) as c FROM messages WHERE role = ?', ['user']) || {}).c || 0,
+        repos:      (get('SELECT COUNT(*) as c FROM repos') || {}).c || 0,
+        blog_posts: (get('SELECT COUNT(*) as c FROM blog_posts') || {}).c || 0,
+        mail:       (get('SELECT COUNT(*) as c FROM mail') || {}).c || 0,
+      },
+      git: getGitActivity(),
+    };
+    statusSlowCacheAt = now;
+  }
+  const slow = statusSlowCache;
 
   res.json({
     server: {
@@ -508,22 +507,18 @@ app.get('/api/status', async (req, res) => {
         free_mb: Math.round(freeMem / 1024 / 1024),
         pct: Math.round((usedMem / totalMem) * 100),
       },
-      disk,
-      network,
-      temps_c: temps,
-      battery,
+      disk: slow.disk,
+      network: slow.network,
+      temps_c: slow.temps_c,
+      battery: slow.battery,
     },
     stats: {
-      users: userCount,
-      messages: msgCount,
-      repos: repoCount,
-      blog_posts: postCount,
-      mail: mailCount,
+      ...slow.stats,
       queue_pending: queuePending,
       queue_done: queueDone,
     },
     rateLimit: rateLimitCache,
-    git: getGitActivity(),
+    git: slow.git,
   });
 });
 
