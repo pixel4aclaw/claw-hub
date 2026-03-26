@@ -2066,6 +2066,7 @@
   socket.on('chat_response', data => {
     lastThrottleMsg = null; // reset dedup on real response
     hideTyping();
+    lastMsgTs = Math.floor(Date.now() / 1000);
     appendMsg('claw', data.content, Date.now());
     document.getElementById('queue-status').textContent = '';
     haptic(8);
