@@ -330,7 +330,8 @@ async function processNext(io) {
       }
 
       if (attempt < MAX_RETRIES) {
-        await new Promise(r => setTimeout(r, BACKOFF_MS));
+        const jitter = Math.floor(Math.random() * 2000);
+        await new Promise(r => setTimeout(r, BACKOFF_MS + jitter));
       }
     }
   }
