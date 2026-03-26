@@ -1568,6 +1568,7 @@
       return;
     }
 
+    lastMsgTs = Math.floor(Date.now() / 1000);
     const sentMsg = appendMsg('user', text, Date.now());
     showTyping();
     try {
