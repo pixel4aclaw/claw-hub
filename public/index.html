@@ -2008,6 +2008,7 @@
   const bannerText = document.getElementById('conn-banner-text');
   let wasEverConnected = false;
   let reconnectAttempts = 0;
+  let lastMsgTs = 0;
 
   function setConnState(state) {
     dot.className = 'status-dot' + (state !== 'connected' ? ' ' + state : '');
