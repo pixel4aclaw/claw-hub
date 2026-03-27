@@ -170,11 +170,11 @@ app.post('/api/chat', async (req, res) => {
 
   // If already quota-throttled, notify immediately so user sees status without waiting for next tick
   const rlc = getRateLimitCache();
-  if (rlc && (rlc.five_hour.utilization > 0.80 || rlc.seven_day.utilization > 0.90)) {
+  if (rlc && (rlc.five_hour.utilization > 0.80 || rlc.seven_day.utilization > 0.80)) {
     const resetSec = Math.max(rlc.five_hour.reset || 0, rlc.seven_day.reset || 0);
     const resetMs = resetSec * 1000;
-    const reason = rlc.seven_day.utilization > 0.90 ? '7-day' : '5-hour';
-    const pct = rlc.seven_day.utilization > 0.90
+    const reason = rlc.seven_day.utilization > 0.80 ? '7-day' : '5-hour';
+    const pct = rlc.seven_day.utilization > 0.80
       ? Math.round(rlc.seven_day.utilization * 100)
       : Math.round(rlc.five_hour.utilization * 100);
     const resetStr = resetMs > Date.now()
