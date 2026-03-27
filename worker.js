@@ -414,7 +414,7 @@ function startWorker(io, getRateLimitCache) {
       const rlc = getRateLimitCache();
       if (rlc) {
         const fiveHourOver = rlc.five_hour.utilization > 0.80;
-        const sevenDayOver = rlc.seven_day.utilization > 0.90;
+        const sevenDayOver = rlc.seven_day.utilization > 0.80;
         if (fiveHourOver || sevenDayOver) {
           if (!quotaThrottleNotified) {
             const resetSec = Math.max(rlc.five_hour.reset || 0, rlc.seven_day.reset || 0);
