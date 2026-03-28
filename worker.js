@@ -412,10 +412,13 @@ function startWorker(io, getRateLimitCache) {
     // Check quota thresholds before dequeuing — no LLM calls, just cached headers
     if (getRateLimitCache) {
       const rlc = getRateLimitCache();
-      if (rlc) {
-        const fiveHourOver = rlc.five_hour.utilization > 0.80;
-        const sevenDayOver = rlc.seven_day.utilization > 0.80;
-        if (fiveHourOver || sevenDayOver) {
+      if (!rlc) {
+        // Cache not populated yet (server just restarted) — don't process until first poll completes
+        return;
+      }
+      const fiveHourOver = rlc.five_hour.utilization > 0.80;
+      const sevenDayOver = rlc.seven_day.utilization > 0.80;
+      if (fiveHourOver || sevenDayOver) {
           if (!quotaThrottleNotified) {
             const resetSec = Math.max(rlc.five_hour.reset || 0, rlc.seven_day.reset || 0);
             const resetMs = resetSec * 1000;
@@ -444,9 +447,8 @@ function startWorker(io, getRateLimitCache) {
           }
           return;
         }
-        // Quota is back under threshold — clear flag so next throttle re-notifies
-        quotaThrottleNotified = false;
-      }
+      // Quota is back under threshold — clear flag so next throttle re-notifies
+      quotaThrottleNotified = false;
     }
 
     busy = true;
