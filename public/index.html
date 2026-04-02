@@ -1075,6 +1075,17 @@
           <span class="status-dot" id="status-dot"></span>
           <h2>Claw</h2>
           <span class="sub" id="queue-status"></span>
+          <div style="position:relative;margin-left:0.5rem;">
+            <span class="model-badge" id="model-badge" onclick="toggleModelDropdown(event)" title="Switch model">opus 4.6</span>
+            <div id="model-dropdown" style="display:none">
+              <div class="model-option active" id="model-opt-claude" onclick="selectModel('claude')">
+                <span class="dot claude"></span>opus 4.6
+              </div>
+              <div class="model-option" id="model-opt-minimax" onclick="selectModel('minimax')">
+                <span class="dot minimax"></span>minimax
+              </div>
+            </div>
+          </div>
         </div>
         <div id="conn-banner">
           <span class="spinner"></span>
