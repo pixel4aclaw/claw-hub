@@ -507,4 +507,4 @@ function startWorker(io, getRateLimitCache) {
   return timer;
 }
 
-module.exports = { startWorker, getRateLimitedUntil };
+module.exports = { startWorker, getRateLimitedUntil, getActiveModel, setActiveModel };
