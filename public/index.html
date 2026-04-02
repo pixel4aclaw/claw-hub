@@ -596,6 +596,32 @@
       font-size: 0.58rem; color: var(--accent); font-weight: 500;
       margin-left: 0.4rem; vertical-align: middle;
     }
+    .model-badge {
+      font-size: 0.65rem; font-weight: 600; letter-spacing: 0.03em;
+      padding: 0.15rem 0.45rem; border-radius: 20px;
+      background: var(--bg3); border: 1px solid var(--border2);
+      color: var(--muted); cursor: pointer; user-select: none;
+      transition: color 0.2s, border-color 0.2s;
+      white-space: nowrap;
+    }
+    .model-badge.minimax { color: #7c3aed; border-color: #7c3aed44; background: #7c3aed11; }
+    .model-badge:hover { color: var(--text); border-color: var(--border2); }
+    #model-dropdown {
+      position: absolute; top: calc(100% + 4px); right: 0;
+      background: var(--bg2); border: 1px solid var(--border2);
+      border-radius: 10px; padding: 0.25rem; z-index: 200;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.3); min-width: 130px;
+    }
+    .model-option {
+      padding: 0.45rem 0.7rem; border-radius: 7px; font-size: 0.75rem;
+      cursor: pointer; display: flex; align-items: center; gap: 0.5rem;
+      color: var(--text);
+    }
+    .model-option:hover { background: var(--bg3); }
+    .model-option.active { color: var(--accent); }
+    .model-option .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .model-option .dot.claude { background: var(--accent); }
+    .model-option .dot.minimax { background: #7c3aed; }
     .user-meta { font-size: 0.68rem; color: var(--muted); margin-top: 0.15rem; }
     .user-stats {
       font-size: 0.7rem; color: var(--muted); text-align: right; flex-shrink: 0;
