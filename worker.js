@@ -442,6 +442,19 @@ function startWorker(io, getRateLimitCache) {
       const fiveHourOver = rlc.five_hour.utilization > 0.80;
       const sevenDayOver = rlc.seven_day.utilization > 0.80;
       if (fiveHourOver || sevenDayOver) {
+        if (!modelLockedByUser && MINIMAX_API_KEY && activeModel !== 'minimax') {
+          // Auto-switch to MiniMax — unblock all parked items and keep processing
+          activeModel = 'minimax';
+          quotaThrottleNotified = false;
+          io.emit('model_changed', { model: 'minimax', reason: 'quota' });
+          const reason = sevenDayOver ? '7-day' : '5-hour';
+          const pct = sevenDayOver
+            ? Math.round(rlc.seven_day.utilization * 100)
+            : Math.round(rlc.five_hour.utilization * 100);
+          console.log(`[worker] quota ${reason} ${pct}% — auto-switched to MiniMax`);
+          // Unblock any previously parked items
+          run(`UPDATE queue SET blocked_until = NULL WHERE status = 'pending' AND blocked_until IS NOT NULL`);
+        } else if (activeModel !== 'minimax') {
           if (!quotaThrottleNotified) {
             const resetSec = Math.max(rlc.five_hour.reset || 0, rlc.seven_day.reset || 0);
             const resetMs = resetSec * 1000;
@@ -453,7 +466,6 @@ function startWorker(io, getRateLimitCache) {
               ? new Date(resetMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
               : 'soon';
             const msg = `⏸ Chat is throttled — ${reason} quota at ${pct}%. Your message is saved and will auto-send after the limit resets at ${resetStr}.`;
-            // Park all unblocked pending items and notify their users
             const pending = all(
               `SELECT q.id, u.username FROM queue q
                JOIN users u ON q.user_id = u.id
@@ -470,8 +482,16 @@ function startWorker(io, getRateLimitCache) {
           }
           return;
         }
-      // Quota is back under threshold — clear flag so next throttle re-notifies
-      quotaThrottleNotified = false;
+        // On MiniMax — fall through and keep processing
+      } else {
+        // Quota recovered
+        if (!modelLockedByUser && activeModel === 'minimax') {
+          activeModel = 'claude';
+          io.emit('model_changed', { model: 'claude', reason: 'quota_recovered' });
+          console.log('[worker] quota recovered — auto-switched back to Claude');
+        }
+        quotaThrottleNotified = false;
+      }
     }
 
     busy = true;
