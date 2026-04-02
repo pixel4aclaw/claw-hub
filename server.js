@@ -215,6 +215,19 @@ app.post('/api/chat/retry', async (req, res) => {
   res.json({ ok: true, queuePosition: position });
 });
 
+// ── Model selector ────────────────────────────────────────────────────────────
+
+app.get('/api/model', (req, res) => {
+  res.json({ model: getActiveModel() });
+});
+
+app.post('/api/model', (req, res) => {
+  const { model } = req.body;
+  if (model !== 'claude' && model !== 'minimax') return res.status(400).json({ error: 'invalid model' });
+  setActiveModel(model, io);
+  res.json({ ok: true, model: getActiveModel() });
+});
+
 // ── Queue status (so frontend can restore indicator on refresh) ──────────────
 
 app.get('/api/queue-status', async (req, res) => {
