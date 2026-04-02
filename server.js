@@ -653,6 +653,7 @@ io.on('connection', (socket) => {
   console.log(`[+] ${socket.username} connected (${socket.id})`);
   socket.join(`user:${socket.username}`);
   socket.emit('welcome', { message: 'Connected to Claw Hub', username: socket.username });
+  socket.emit('model_changed', { model: getActiveModel() });
 
   // Track presence — update last_seen_at on connect
   run(`UPDATE users SET last_seen_at = strftime('%s','now') WHERE username = ?`, [socket.username]);
