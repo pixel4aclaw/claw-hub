@@ -129,10 +129,16 @@ async function callAgent(username, userId, userMessage, forceNewSession, onProgr
   }
 
   return new Promise((resolve, reject) => {
+    const childEnv = { ...process.env };
+    if (activeModel === 'minimax' && MINIMAX_API_KEY) {
+      childEnv.ANTHROPIC_BASE_URL = MINIMAX_BASE_URL;
+      childEnv.ANTHROPIC_API_KEY = MINIMAX_API_KEY;
+    }
     const child = fork(path.join(__dirname, 'agent-child.js'), [], {
       detached: true,
       stdio: ['pipe', 'inherit', 'inherit', 'ipc'],
       execArgv: ['--max-old-space-size=256'],
+      env: childEnv,
     });
 
     let settled = false;
