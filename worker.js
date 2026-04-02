@@ -36,6 +36,23 @@ function getRateLimitedUntil() { return globalRateLimitedUntil; }
 // Quota throttle state — prevent redundant notifications
 let quotaThrottleNotified = false;
 
+// Model routing — 'claude' or 'minimax'
+const MINIMAX_API_KEY = process.env.MINIMAX_API_KEY || '';
+const MINIMAX_BASE_URL = 'https://api.minimax.io/anthropic';
+let activeModel = 'claude';
+let modelLockedByUser = false; // true when a user explicitly chose a model
+
+function getActiveModel() { return activeModel; }
+function setActiveModel(model, io) {
+  if (model !== 'claude' && model !== 'minimax') return;
+  modelLockedByUser = true;
+  if (model !== activeModel) {
+    activeModel = model;
+    if (io) io.emit('model_changed', { model: activeModel });
+    console.log(`[worker] model manually set to ${activeModel}`);
+  }
+}
+
 const SYSTEM_PROMPT = `You are Claw, the AI at the heart of Claw Hub — a collaborative app where ~40 developers experiment with building AI-powered projects. You live inside the codebase on a Pixel 4a running Termux.
 
 You have full access to the server: Bash, file read/write, code editing, web search. When a user asks you to build something, you build it. When they ask a question, answer directly.
