@@ -115,7 +115,7 @@ async function callAgent(username, userId, userMessage, forceNewSession, onProgr
   }
 
   const options = {
-    model: 'opus',
+    model: activeModel === 'minimax' ? 'MiniMax-Text-01' : 'opus',
     cwd: __dirname,
     allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write', 'WebSearch', 'WebFetch'],
     permissionMode: 'bypassPermissions',
