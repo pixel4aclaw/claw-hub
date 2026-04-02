@@ -10,7 +10,7 @@ const v8 = require('v8');
 const { execSync } = require('child_process');
 const { getDb, all, get, insert, run, persist } = require('./db');
 const { requireAuth, setSession, getSession, clearSession, SITE_PASSWORD } = require('./auth');
-const { startWorker, getRateLimitedUntil } = require('./worker');
+const { startWorker, getRateLimitedUntil, getActiveModel, setActiveModel } = require('./worker');
 
 const app = express();
 const server = http.createServer(app);
