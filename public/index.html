@@ -2126,6 +2126,50 @@
     }
   });
 
+  // ── Model selector ────────────────────────────────────────────────
+  function updateModelBadge(model) {
+    const badge = document.getElementById('model-badge');
+    const optClaude = document.getElementById('model-opt-claude');
+    const optMinimax = document.getElementById('model-opt-minimax');
+    if (!badge) return;
+    if (model === 'minimax') {
+      badge.textContent = 'minimax';
+      badge.className = 'model-badge minimax';
+      optClaude.classList.remove('active');
+      optMinimax.classList.add('active');
+    } else {
+      badge.textContent = 'opus 4.6';
+      badge.className = 'model-badge';
+      optClaude.classList.add('active');
+      optMinimax.classList.remove('active');
+    }
+  }
+
+  function toggleModelDropdown(e) {
+    e.stopPropagation();
+    const dd = document.getElementById('model-dropdown');
+    dd.style.display = dd.style.display === 'none' ? '' : 'none';
+  }
+
+  async function selectModel(model) {
+    document.getElementById('model-dropdown').style.display = 'none';
+    await fetch('/api/model', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model }),
+    });
+    // Badge will update via model_changed socket event
+  }
+
+  document.addEventListener('click', () => {
+    const dd = document.getElementById('model-dropdown');
+    if (dd) dd.style.display = 'none';
+  });
+
+  socket.on('model_changed', data => {
+    if (data?.model) updateModelBadge(data.model);
+  });
+
   // ── Quota throttle notification ──────────────────────────────────
   let lastThrottleMsg = null;
   socket.on('quota_throttled', data => {
